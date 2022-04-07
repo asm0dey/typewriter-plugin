@@ -1,18 +1,13 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.github.asm0dey.typewriterplugin</id>
-    <name>typewriter-plugin</name>
+    <name>Typewriter</name>
     <vendor>asm0dey</vendor>
 
     <depends>com.intellij.modules.platform</depends>
 
-    <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceImplementation="com.github.asm0dey.typewriterplugin.services.MyApplicationService"/>
-        <projectService serviceImplementation="com.github.asm0dey.typewriterplugin.services.MyProjectService"/>
-    </extensions>
-
-    <applicationListeners>
-        <listener class="com.github.asm0dey.typewriterplugin.listeners.MyProjectManagerListener"
-                  topic="com.intellij.openapi.project.ProjectManagerListener"/>
-    </applicationListeners>
+    <actions>
+        <action id="com.github.asm0dey.typewriterplugin.TypeWriterAction"
+                class="com.github.asm0dey.typewriterplugin.TypeWriterAction" text="Typewriter"/>
+    </actions>
 </idea-plugin>
