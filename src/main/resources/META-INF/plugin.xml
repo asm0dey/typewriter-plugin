@@ -10,7 +10,6 @@
         <action id="com.github.asm0dey.typewriterplugin.TypeWriterAction"
                 class="com.github.asm0dey.typewriterplugin.TypeWriterAction" text="Typewriter">
             <keyboard-shortcut first-keystroke="control shift T" keymap="$default"/>
-            <keyboard-shortcut first-keystroke="command shift T" keymap="Mac OS X"/>
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>
