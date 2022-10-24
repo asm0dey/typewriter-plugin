@@ -15,11 +15,11 @@
 - [ ] Click the <kbd>Watch</kbd> button on the top of the [IntelliJ Platform Plugin Template][template] to be notified about releases containing new features and fixes.
 
 <!-- Plugin description -->
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
 
-This specific section is a source for the [plugin.xml](/src/main/resources/META-INF/plugin.xml) file which will be extracted by the [Gradle](/build.gradle.kts) during the build process.
+This plugin implements functionality usually requested by people, who record videos of some code features.
 
-To keep everything working, do not remove `<!-- ... -->` sections. 
+By hitting <kbd>Ctrl</kbd>(<kbd>Cmd</kbd> fpr Mac)+<kbd>T</kbd> you can call a typewriter plugin window, where you can type text. This text will be then autotyped in IDE with a given speed.
+
 <!-- Plugin description end -->
 
 ## Installation
