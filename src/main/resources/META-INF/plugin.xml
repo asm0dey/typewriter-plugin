@@ -10,7 +10,7 @@
         <action id="com.github.asm0dey.typewriterplugin.TypeWriterAction"
                 class="com.github.asm0dey.typewriterplugin.TypeWriterAction"
                 text="TypeWriter">
-            <keyboard-shortcut first-keystroke="control shift T" keymap="$default"/>
+            <keyboard-shortcut first-keystroke="control shift T" second-keystroke="W" keymap="$default"/>
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>

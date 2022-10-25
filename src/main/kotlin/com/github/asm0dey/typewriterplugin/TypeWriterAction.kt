@@ -60,23 +60,3 @@ class TypeWriterAction : AnAction() {
     }
 
 }
-
-/*
-enum class Language {
-    JAVA {
-        override val langName: String = "Java"
-        override val lang = IDELang.findLanguageByID("JAVA")!!
-    },
-    KOTLIN {
-        override val langName: String = "Kotlin"
-        override val lang = IDELang.findLanguageByID("kotlin")!!
-    },
-    PLAIN {
-        override val langName: String = "Plaintext"
-        override val lang = IDELang.ANY
-    };
-
-    abstract val langName: String
-    abstract val lang: IDELang
-}
-*/
