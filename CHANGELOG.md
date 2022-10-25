@@ -2,7 +2,7 @@
 
 # typewriter-plugin Changelog
 
-## [0.0.7]
+## [Unreleased]
 ### Changed
 - Changed the default  shortcut to Ctrl+Shift+T,W: two keys, but does not interfere with native shortcuts
 
