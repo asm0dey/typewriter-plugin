@@ -6,15 +6,15 @@ plugins {
     // Java support
     id("java")
     // Kotlin support
-    id("org.jetbrains.kotlin.jvm")
+    alias(libs.plugins.org.jetbrains.kotlin.jvm)
     // Gradle IntelliJ Plugin
-    id("org.jetbrains.intellij")
+    alias(libs.plugins.org.jetbrains.intellij)
     // Gradle Changelog Plugin
-    id("org.jetbrains.changelog")
+    alias(libs.plugins.org.jetbrains.changelog)
     // Gradle Qodana Plugin
-    id("org.jetbrains.qodana")
+    alias(libs.plugins.org.jetbrains.qodana)
     // Gradle Kover Plugin
-    id("org.jetbrains.kotlinx.kover")
+    alias(libs.plugins.org.jetbrains.kotlinx.kover)
 }
 
 group = properties("pluginGroup")
