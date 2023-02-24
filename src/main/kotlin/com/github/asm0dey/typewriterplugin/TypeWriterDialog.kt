@@ -10,6 +10,8 @@ import javax.swing.JComponent
 class TypeWriterDialog(project: Project) : DialogWrapper(project) {
     var text = ""
     var delay = TypeWriterConstants.defaultDelay
+    var openingSequence = ""
+    var closingSequence = ""
 
     init {
         title = message("dialog.title")
@@ -38,5 +40,14 @@ class TypeWriterDialog(project: Project) : DialogWrapper(project) {
             @Suppress("DialogTitleCapitalization")
             label(message("dialog.ms"))
         }
+        twoColumnsRow({
+            textField()
+                .label("Template opens", LabelPosition.LEFT)
+                .bindText(::openingSequence)
+        }, {
+            textField()
+                .label("Template closes", LabelPosition.LEFT)
+                .bindText(::closingSequence)
+        })
     }
 }

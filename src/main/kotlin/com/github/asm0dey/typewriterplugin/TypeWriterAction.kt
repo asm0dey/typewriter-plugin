@@ -1,62 +1,51 @@
 package com.github.asm0dey.typewriterplugin
 
-import com.intellij.openapi.actionSystem.AnAction
+import com.github.asm0dey.typewriterplugin.commands.PauseCommand
+import com.github.asm0dey.typewriterplugin.commands.WriteCommand
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.actionSystem.IdeActions.*
-import com.intellij.openapi.command.WriteCommandAction
-import com.intellij.openapi.editor.actionSystem.EditorActionManager
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import com.intellij.openapi.project.DumbAwareAction
+import org.apache.commons.lang3.math.NumberUtils
+import kotlin.math.min
 
-class TypeWriterAction : AnAction() {
+class TypeWriterAction : DumbAwareAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
-        val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val project = e.getData(CommonDataKeys.PROJECT) ?: return
-        val document = editor.document
-        val caret = editor.caretModel.primaryCaret
-        val scheduledExecutorService = Executors.newScheduledThreadPool(1)
-
         val dialog = TypeWriterDialog(project)
-        fun callAction(actionName: String) = EditorActionManager.getInstance()
-            .getActionHandler(actionName)
-            .execute(editor, caret, e.dataContext)
 
         if (dialog.showAndGet()) {
-            val charIterator = dialog.text.lines().joinToString("\n") {
-                it.replace(Regex("^\\s+"), "")
-            }.trimEnd('\n').iterator()
+            val text = dialog.text
+            val delay = dialog.delay.toLong()
+            val openingSequence = Regex.escapeReplacement(dialog.openingSequence)
+            val closingSequence = Regex.escapeReplacement(dialog.closingSequence)
+            val matches = """$openingSequence(.*?)$closingSequence""".toRegex().findAll(text)
 
-            var nl = false
-            scheduledExecutorService.scheduleAtFixedRate({
-                WriteCommandAction.runWriteCommandAction(project) {
-                    when (val next = charIterator.next()) {
-                        '\n' -> {
-                            callAction(ACTION_EDITOR_START_NEW_LINE)
-                            nl = true
-                        }
+            sequence {
+                if (matches.none()) {
+                    yield(WriteCommand(project, e, text, delay))
+                }
 
-                        '}' -> {
-                            if (!nl) {
-                                document.insertString(caret.offset, next.toString())
-                            } else {
-                                callAction(ACTION_EDITOR_BACKSPACE)
-                                callAction(ACTION_EDITOR_MOVE_CARET_DOWN)
-                            }
-                            nl = false
-                        }
+                val iterator = matches.iterator()
+                while (iterator.hasNext()) {
+                    val item = iterator.next()
 
-                        else -> {
-                            document.insertString(caret.offset, next.toString())
-                            callAction(ACTION_EDITOR_MOVE_CARET_RIGHT)
-                            nl = false
+                    if (item.range.first > 0) {
+                        val content = text.substring(0, item.range.first)
+                        yield(WriteCommand(project, e, content, delay))
+                    }
+                    yield(PauseCommand(2000))
+
+                    if (!iterator.hasNext()) {
+                        val content = text.substring(item.range.last + 1, text.length)
+                        if (content.isNotEmpty()) {
+                            yield(WriteCommand(project, e, content, delay))
                         }
                     }
                 }
-
-            }, 0L, dialog.delay.toLong(), TimeUnit.MILLISECONDS)
+            }.forEach {
+                it.run()
+            }
         }
     }
-
 }
