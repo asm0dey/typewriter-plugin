@@ -17,14 +17,13 @@ class TypeWriterAction : DumbAwareAction() {
         val text = dialog.text
         val openingSequence = Regex.escape(dialog.openingSequence)
         val closingSequence = Regex.escape(dialog.closingSequence)
-        val matches = """$openingSequence(.*?)$closingSequence""".toRegex().findAll(text)
         val scheduler = service<TypewriterExecutorService>()
 
         val delay = dialog.delay.toLong()
-        val iterator = matches.iterator()
+        val matches = """$openingSequence(.*?)$closingSequence""".toRegex().findAll(text).iterator()
         var cur: MatchResult? = null
         while (true) {
-            val next = if (iterator.hasNext()) iterator.next() else null
+            val next = if (matches.hasNext()) matches.next() else null
             val content = text.substring(cur?.range?.last?.plus(1) ?: 0, next?.range?.first ?: text.length)
             val commands = WriteCharCommand.fromText(e, content, delay.toInt(), dialog.jitter)
             for (command in commands) scheduler.enqueue(command)
