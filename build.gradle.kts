@@ -58,6 +58,7 @@ qodana {
 kover {
     isDisabled.set(false)
     xmlReport {
+        reportFile.set(layout.buildDirectory.file("reports/kover/xml/report.xml"))
         onCheck.set(true)
     }
 }
