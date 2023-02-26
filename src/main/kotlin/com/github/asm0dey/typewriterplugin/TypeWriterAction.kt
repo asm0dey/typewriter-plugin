@@ -28,8 +28,18 @@ class TypeWriterAction : DumbAwareAction() {
             val content = text.substring(cur?.range?.last?.plus(1) ?: 0, next?.range?.first ?: text.length)
             val commands = WriteCharCommand.fromText(e, content, delay.toInt())
             for (command in commands) scheduler.enqueue(command)
-            if (next != null)
-                scheduler.enqueue(PauseCommand(2000))
+            if (next != null) {
+                val (command, value) = next
+                    .value
+                    .substringAfter(dialog.openingSequence)
+                    .substringBeforeLast(dialog.closingSequence)
+                    .trim()
+                    .split(':')
+                    .map(String::trim)
+                when (command) {
+                    "pause" -> scheduler.enqueue(PauseCommand(value.toLong()))
+                }
+            }
             cur = next
             if (cur == null) break
         }
