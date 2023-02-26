@@ -10,8 +10,8 @@ import javax.swing.JComponent
 class TypeWriterDialog(project: Project) : DialogWrapper(project) {
     var text = ""
     var delay = TypeWriterConstants.defaultDelay
-    var openingSequence = ""
-    var closingSequence = ""
+    var openingSequence = "<"
+    var closingSequence = ">"
 
     init {
         title = message("dialog.title")
@@ -42,12 +42,18 @@ class TypeWriterDialog(project: Project) : DialogWrapper(project) {
         }
         twoColumnsRow({
             textField()
-                .label("Template opens", LabelPosition.LEFT)
+                .label("Template opens", LabelPosition.TOP)
                 .bindText(::openingSequence)
+                .let {
+                    it.component.text = "<"
+                }
         }, {
             textField()
-                .label("Template closes", LabelPosition.LEFT)
+                .label("Template closes", LabelPosition.TOP)
                 .bindText(::closingSequence)
+                .let {
+                    it.component.text = ">"
+                }
         })
     }
 }

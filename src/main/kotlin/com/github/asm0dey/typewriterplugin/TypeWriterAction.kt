@@ -1,12 +1,11 @@
 package com.github.asm0dey.typewriterplugin
 
 import com.github.asm0dey.typewriterplugin.commands.PauseCommand
-import com.github.asm0dey.typewriterplugin.commands.WriteCommand
+import com.github.asm0dey.typewriterplugin.commands.WriteCharCommand
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.components.service
 import com.intellij.openapi.project.DumbAwareAction
-import org.apache.commons.lang3.math.NumberUtils
-import kotlin.math.min
 
 class TypeWriterAction : DumbAwareAction() {
 
@@ -14,38 +13,25 @@ class TypeWriterAction : DumbAwareAction() {
         val project = e.getData(CommonDataKeys.PROJECT) ?: return
         val dialog = TypeWriterDialog(project)
 
-        if (dialog.showAndGet()) {
-            val text = dialog.text
-            val delay = dialog.delay.toLong()
-            val openingSequence = Regex.escapeReplacement(dialog.openingSequence)
-            val closingSequence = Regex.escapeReplacement(dialog.closingSequence)
-            val matches = """$openingSequence(.*?)$closingSequence""".toRegex().findAll(text)
+        if (!dialog.showAndGet()) return
+        val text = dialog.text
+        val openingSequence = Regex.escapeReplacement(dialog.openingSequence)
+        val closingSequence = Regex.escapeReplacement(dialog.closingSequence)
+        val matches = """$openingSequence(.*?)$closingSequence""".toRegex().findAll(text)
+        val scheduler = service<TypewriterExecutorService>()
 
-            sequence {
-                if (matches.none()) {
-                    yield(WriteCommand(project, e, text, delay))
-                }
-
-                val iterator = matches.iterator()
-                while (iterator.hasNext()) {
-                    val item = iterator.next()
-
-                    if (item.range.first > 0) {
-                        val content = text.substring(0, item.range.first)
-                        yield(WriteCommand(project, e, content, delay))
-                    }
-                    yield(PauseCommand(2000))
-
-                    if (!iterator.hasNext()) {
-                        val content = text.substring(item.range.last + 1, text.length)
-                        if (content.isNotEmpty()) {
-                            yield(WriteCommand(project, e, content, delay))
-                        }
-                    }
-                }
-            }.forEach {
-                it.run()
-            }
+        val delay = dialog.delay.toLong()
+        val iterator = matches.iterator()
+        var cur: MatchResult? = null
+        while (true) {
+            val next = if (iterator.hasNext()) iterator.next() else null
+            val content = text.substring(cur?.range?.last?.plus(1) ?: 0, next?.range?.first ?: text.length)
+            val commands = WriteCharCommand.fromText(e, content, delay.toInt())
+            for (command in commands) scheduler.enqueue(command)
+            if (next != null)
+                scheduler.enqueue(PauseCommand(2000))
+            cur = next
+            if (cur == null) break
         }
     }
 }
