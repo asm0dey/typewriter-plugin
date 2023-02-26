@@ -2,9 +2,10 @@ package com.github.asm0dey.typewriterplugin.commands
 
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.actionSystem.IdeActions
+import com.intellij.openapi.actionSystem.IdeActions.*
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.actionSystem.EditorActionManager
+import kotlin.random.Random
 
 class WriteCharCommand(
     private val char: Char,
@@ -23,42 +24,44 @@ class WriteCharCommand(
     companion object {
         private val editorActionManager = EditorActionManager.getInstance()
 
-        fun fromText(event: AnActionEvent, content: String, pauseBetweenCharacters: Int) = sequence {
+        fun fromText(event: AnActionEvent, content: String, pauseBetweenCharacters: Int, jitter: Int) = sequence {
             val characters = content
                 .lines()
                 .joinToString("\n") {
                     it.replace(Regex("^\\s+"), "")
                 }
-                .trimEnd('\n')
                 .asSequence()
 
             yield(WriteCharCommand(characters.first(), pauseBetweenCharacters, event))
             characters.windowed(2).forEach { (f, s) ->
-                yield(WriteCharCommand(s, pauseBetweenCharacters, event, f == '\n'))
+                yield(WriteCharCommand(s, pauseBetweenCharacters + Random.nextInt(-jitter, jitter), event, f == '\n'))
             }
         }
     }
 
     override fun run() {
         if (document == null || caret == null) return
-        WriteCommandAction.runWriteCommandAction(event.project) {
+        val project = event.project
+        WriteCommandAction.runWriteCommandAction(project) {
+            val offset = caret.offset
+            val str = char.toString()
             when (char) {
                 '\n' -> {
-                    callAction(IdeActions.ACTION_EDITOR_START_NEW_LINE)
+                    callAction(ACTION_EDITOR_START_NEW_LINE)
                 }
 
                 '}' -> {
                     if (!afterNewLine) {
-                        document.insertString(caret.offset, char.toString())
+                        document.insertString(offset, str)
                     } else {
-                        callAction(IdeActions.ACTION_EDITOR_BACKSPACE)
-                        callAction(IdeActions.ACTION_EDITOR_MOVE_CARET_DOWN)
+                        callAction(ACTION_EDITOR_BACKSPACE)
+                        callAction(ACTION_EDITOR_MOVE_CARET_DOWN)
                     }
                 }
 
                 else -> {
-                    document.insertString(caret.offset, char.toString())
-                    callAction(IdeActions.ACTION_EDITOR_MOVE_CARET_RIGHT)
+                    document.insertString(offset, str)
+                    callAction(ACTION_EDITOR_MOVE_CARET_RIGHT)
                 }
             }
         }

@@ -15,8 +15,8 @@ class TypeWriterAction : DumbAwareAction() {
 
         if (!dialog.showAndGet()) return
         val text = dialog.text
-        val openingSequence = Regex.escapeReplacement(dialog.openingSequence)
-        val closingSequence = Regex.escapeReplacement(dialog.closingSequence)
+        val openingSequence = Regex.escape(dialog.openingSequence)
+        val closingSequence = Regex.escape(dialog.closingSequence)
         val matches = """$openingSequence(.*?)$closingSequence""".toRegex().findAll(text)
         val scheduler = service<TypewriterExecutorService>()
 
@@ -26,7 +26,7 @@ class TypeWriterAction : DumbAwareAction() {
         while (true) {
             val next = if (iterator.hasNext()) iterator.next() else null
             val content = text.substring(cur?.range?.last?.plus(1) ?: 0, next?.range?.first ?: text.length)
-            val commands = WriteCharCommand.fromText(e, content, delay.toInt())
+            val commands = WriteCharCommand.fromText(e, content, delay.toInt(), dialog.jitter)
             for (command in commands) scheduler.enqueue(command)
             if (next != null) {
                 val (command, value) = next

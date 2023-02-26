@@ -12,6 +12,7 @@ class TypeWriterDialog(project: Project) : DialogWrapper(project) {
     var delay = TypeWriterConstants.defaultDelay
     var openingSequence = "<"
     var closingSequence = ">"
+    var jitter = 0
 
     init {
         title = message("dialog.title")
@@ -29,7 +30,7 @@ class TypeWriterDialog(project: Project) : DialogWrapper(project) {
                     it.component.columns = 50
                 }
         }
-        row {
+        twoColumnsRow({
             intTextField(IntRange(1, 2000), 4)
                 .label(message("dialog.delay"))
                 .bindIntText(::delay)
@@ -39,17 +40,28 @@ class TypeWriterDialog(project: Project) : DialogWrapper(project) {
                 }
             @Suppress("DialogTitleCapitalization")
             label(message("dialog.ms"))
+        }) {
+            intTextField(IntRange(1, 2000), 4)
+                .label(message("dialog.jitter"))
+                .bindIntText(::jitter)
+                .gap(RightGap.SMALL)
+                .let {
+                    it.component.text = "0"
+                }
+            @Suppress("DialogTitleCapitalization")
+            label(message("dialog.ms"))
+
         }
         twoColumnsRow({
             textField()
-                .label("Template opens", LabelPosition.TOP)
+                .label(message("dialog.template.opens"), LabelPosition.TOP)
                 .bindText(::openingSequence)
                 .let {
                     it.component.text = "<"
                 }
         }, {
             textField()
-                .label("Template closes", LabelPosition.TOP)
+                .label(message("dialog.template.closes"), LabelPosition.TOP)
                 .bindText(::closingSequence)
                 .let {
                     it.component.text = ">"
