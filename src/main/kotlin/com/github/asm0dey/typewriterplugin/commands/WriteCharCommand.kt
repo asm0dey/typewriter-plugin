@@ -34,7 +34,7 @@ class WriteCharCommand(
 
             yield(WriteCharCommand(characters.first(), pauseBetweenCharacters, event))
             characters.windowed(2).forEach { (f, s) ->
-                yield(WriteCharCommand(s, pauseBetweenCharacters + Random.nextInt(-jitter, jitter), event, f == '\n'))
+                yield(WriteCharCommand(s, pauseBetweenCharacters + Random.nextInt(-jitter, jitter+1), event, f == '\n'))
             }
         }
     }
@@ -53,6 +53,7 @@ class WriteCharCommand(
                 '}' -> {
                     if (!afterNewLine) {
                         document.insertString(offset, str)
+                        callAction(ACTION_EDITOR_MOVE_CARET_RIGHT)
                     } else {
                         callAction(ACTION_EDITOR_BACKSPACE)
                         callAction(ACTION_EDITOR_MOVE_CARET_DOWN)
