@@ -15,7 +15,7 @@ qodana = { id = "org.jetbrains.qodana", version.ref = "qodana" }
 annotations = "24.0.1"
 
 # plugins
-dokka = "1.8.10"
+dokka = "1.8.20"
 kotlin = "1.8.10"
 ##  ⬆ = "1.8.20-Beta"
 ##  ⬆ = "1.8.20-RC"
