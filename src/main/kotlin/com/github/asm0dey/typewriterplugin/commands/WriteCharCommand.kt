@@ -30,11 +30,17 @@ class WriteCharCommand(
                 .joinToString("\n") {
                     it.replace(Regex("^\\s+"), "")
                 }
-                .asSequence()
+                .toList()
 
-            yield(WriteCharCommand(characters.first(), pauseBetweenCharacters, event))
-            characters.windowed(2).forEach { (f, s) ->
-                yield(WriteCharCommand(s, pauseBetweenCharacters + Random.nextInt(-jitter, jitter+1), event, f == '\n'))
+            for ((index, value) in characters.withIndex()) {
+                yield(
+                    WriteCharCommand(
+                        value,
+                        pauseBetweenCharacters + Random.nextInt(-jitter, jitter + 1),
+                        event,
+                        index - 1 in characters.indices && characters[index - 1] == '\n'
+                    )
+                )
             }
         }
     }
