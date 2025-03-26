@@ -12,6 +12,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.dsl.builder.*
 import com.intellij.ui.table.JBTable
 import java.awt.Dimension
+import java.util.*
 import javax.swing.JComponent
 import javax.swing.ListSelectionModel
 import javax.swing.table.AbstractTableModel
@@ -77,6 +78,26 @@ class SnippetManagerDialog(private val project: Project) : DialogWrapper(project
                     dialog.openingSequence,
                     dialog.closingSequence
                 )
+
+                // If the shortcut has changed, unregister the old one
+                if (snippet.shortcut != updatedSnippet.shortcut && snippet.shortcut.isNotBlank()) {
+                    // Unregister the action for the old shortcut
+                    val oldActionId = "com.github.asm0dey.typewriterplugin.DirectSnippetExecution.${snippet.shortcut}"
+                    ActionManager.getInstance().unregisterAction(oldActionId)
+
+                    // Remove the old keyboard shortcut
+                    try {
+                        val keymap = KeymapManager.getInstance().activeKeymap
+                        val shortcuts = keymap.getShortcuts(oldActionId)
+                        for (shortcut in shortcuts) {
+                            keymap.removeShortcut(oldActionId, shortcut)
+                        }
+                    } catch (e: Exception) {
+                        // Log error or handle any issues
+                        println("Failed to remove old shortcut for snippet: ${snippet.shortcut}")
+                    }
+                }
+
                 snippetStorage.addSnippet(updatedSnippet)
                 tableModel.updateSnippet(selectedRow, updatedSnippet)
 
@@ -89,7 +110,7 @@ class SnippetManagerDialog(private val project: Project) : DialogWrapper(project
                 try {
                     // Check for valid modifier keys
                     val validModifiers = setOf("ctrl", "control", "meta", "alt", "shift", "altGraph", "button1", "button2", "button3")
-                    val parts = updatedSnippet.shortcut.toLowerCase().split(" ").map { it.trim() }
+                    val parts = updatedSnippet.shortcut.lowercase(Locale.US).split(" ").map { it.trim() }
 
                     // Check if all modifiers are valid
                     val modifiers = parts.dropLast(1)

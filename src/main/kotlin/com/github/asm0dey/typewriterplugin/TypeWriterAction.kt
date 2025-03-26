@@ -19,12 +19,14 @@ class TypeWriterAction : DumbAwareAction() {
         val dialog = TypeWriterDialog(project)
 
         if (!dialog.showAndGet()) return
-        val text = dialog.text
-        val scheduler = service<TypewriterExecutorService>()
 
         // Save snippet if shortcut is provided
         if (dialog.shortcut.isNotBlank()) {
             val snippetStorage = service<SnippetStorage>()
+
+            // Check if there's an existing snippet with the same shortcut
+            val existingSnippet = snippetStorage.getSnippet(dialog.shortcut)
+
             val snippet = Snippet(
                 dialog.shortcut,
                 dialog.text,
@@ -33,11 +35,29 @@ class TypeWriterAction : DumbAwareAction() {
                 dialog.openingSequence,
                 dialog.closingSequence
             )
+
+            // If there's an existing snippet with the same shortcut, unregister its action
+            if (existingSnippet != null) {
+                val oldActionId = "com.github.asm0dey.typewriterplugin.DirectSnippetExecution.${existingSnippet.shortcut}"
+                ActionManager.getInstance().unregisterAction(oldActionId)
+
+                // Remove the old keyboard shortcut
+                try {
+                    val keymap = KeymapManager.getInstance().activeKeymap
+                    val shortcuts = keymap.getShortcuts(oldActionId)
+                    for (shortcut in shortcuts) {
+                        keymap.removeShortcut(oldActionId, shortcut)
+                    }
+                } catch (e: Exception) {
+                    // Log error or handle any issues
+                    println("Failed to remove shortcut for snippet: ${existingSnippet.shortcut}")
+                }
+            }
+
             snippetStorage.addSnippet(snippet)
 
             // Register the action for this shortcut
-            val actionId =
-                "TypeWriter ${dialog.shortcut}"
+            val actionId = "com.github.asm0dey.typewriterplugin.DirectSnippetExecution.${dialog.shortcut}"
             val action = DirectSnippetExecutionAction(snippet)
             ActionManager.getInstance().registerAction(actionId, action)
 
@@ -49,16 +69,6 @@ class TypeWriterAction : DumbAwareAction() {
                 keymap.addShortcut(actionId, shortcut)
             }
         }
-
-        executeTyping(
-            e,
-            text,
-            dialog.openingSequence,
-            dialog.closingSequence,
-            dialog.delay.toLong(),
-            dialog.jitter,
-            scheduler
-        )
     }
 
     companion object {

@@ -5,15 +5,13 @@ import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.keymap.KeymapManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.ui.JBColor.RED
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.*
 import javax.swing.JComponent
 import javax.swing.KeyStroke
-import javax.swing.event.DocumentEvent
-import javax.swing.event.DocumentListener
 
-@Suppress("UnstableApiUsage")
-class TypeWriterDialog(val project: Project) : DialogWrapper(project) {
+class TypeWriterDialog(private val project: Project) : DialogWrapper(project) {
     var text = ""
     var delay = TypeWriterConstants.defaultDelay
     var openingSequence = "<"
@@ -30,25 +28,22 @@ class TypeWriterDialog(val project: Project) : DialogWrapper(project) {
         init()
     }
 
-    override fun show() {
-        super.show()
-        // Validate shortcut when dialog is shown (in case it's pre-populated)
-//        validateShortcut(shortcutField)
-    }
-
     override fun createCenterPanel(): JComponent = panel {
         row {
-            val shortcutField = textField()
+            // Create a custom shortcut text field that intercepts keyboard shortcuts
+            val shortcutField = cell(ShortcutTextField())
                 .label(message("dialog.shortcut"), LabelPosition.LEFT)
                 .comment(message("dialog.shortcut.description"))
                 .bindText(::shortcut)
 
-            // Add document listener for live validation
-            shortcutField.component.document.addDocumentListener(object : DocumentListener {
-                override fun insertUpdate(e: DocumentEvent) = validateShortcut(shortcutField)
-                override fun removeUpdate(e: DocumentEvent) = validateShortcut(shortcutField)
-                override fun changedUpdate(e: DocumentEvent) = validateShortcut(shortcutField)
-            })
+            // Add action listener for validation when shortcut changes
+            shortcutField.component.addActionListener { validateShortcut(shortcutField) }
+
+            // Add a button to clear the shortcut
+            button("Clear") {
+                shortcutField.component.clearShortcut()
+                validateShortcut(shortcutField)
+            }
         }
 
         row {
@@ -56,7 +51,7 @@ class TypeWriterDialog(val project: Project) : DialogWrapper(project) {
             shortcutValidationText = label("")
             shortcutValidationText?.applyToComponent {
                 isVisible = false
-                foreground = java.awt.Color.RED
+                foreground = RED
             }
         }
         row {
@@ -126,20 +121,22 @@ class TypeWriterDialog(val project: Project) : DialogWrapper(project) {
      * 2. The shortcut contains only valid modifier keys and key names
      * 3. The shortcut doesn't conflict with existing shortcuts
      */
-    private fun validateShortcut(shortcutField: Cell<JBTextField>) {
-        if (shortcutField.component.text.isBlank()) {
+    private fun validateShortcut(shortcutField: Cell<*>) {
+        // Cast the component to JBTextField since ShortcutTextField extends it
+        val textField = shortcutField.component as JBTextField
+
+        if (textField.text.isBlank()) {
             // Empty shortcut is valid (optional)
             isShortcutValid = true
             shortcutValidationText?.component?.isVisible = false
             return
         }
 
-        // Check for valid modifier keys and key names
-
-
-        val keyStroke = KeyStroke.getKeyStroke(shortcutField.component.text)
+        // Since the ShortcutTextField already ensures valid keystrokes,
+        // we only need to check for conflicts with existing shortcuts
+        val keyStroke = KeyStroke.getKeyStroke(textField.text)
         if (keyStroke == null) {
-            // Invalid modifier keys
+            // This should not happen with ShortcutTextField, but just in case
             isShortcutValid = false
             shortcutValidationText?.component?.text = message("dialog.shortcut.invalid")
             shortcutValidationText?.component?.isVisible = true
