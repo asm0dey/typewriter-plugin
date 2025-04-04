@@ -14,7 +14,7 @@ kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 annotations = "24.0.1"
 
 # plugins
-dokka = "1.8.10"
+dokka = "2.0.0"
 kotlin = "2.1.20"
 changelog = "2.2.1"
 gradleIntelliJPlugin = "1.17.4"
