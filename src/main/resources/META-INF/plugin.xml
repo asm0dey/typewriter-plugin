@@ -6,11 +6,22 @@
 
     <depends>com.intellij.modules.platform</depends>
 
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="com.github.asm0dey.typewriterplugin.SnippetShortcutRegistrar"/>
+        <applicationService serviceImplementation="com.github.asm0dey.typewriterplugin.SnippetStorage"/>
+    </extensions>
+
     <actions resource-bundle="messages.TypeWriterBundle">
         <action id="com.github.asm0dey.typewriterplugin.TypeWriterAction"
                 class="com.github.asm0dey.typewriterplugin.TypeWriterAction"
                 text="TypeWriter">
             <keyboard-shortcut first-keystroke="control shift T" second-keystroke="W" keymap="$default"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+
+        <action id="com.github.asm0dey.typewriterplugin.ExecuteSnippetAction"
+                class="com.github.asm0dey.typewriterplugin.ExecuteSnippetAction"
+                text="Execute TypeWriter Snippet">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
     </actions>
