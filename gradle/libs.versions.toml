@@ -11,7 +11,7 @@ kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 [versions]
 
 # libraries
-annotations = "24.0.1"
+annotations = "26.0.2"
 
 # plugins
 dokka = "1.8.10"
