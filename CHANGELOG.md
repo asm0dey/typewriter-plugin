@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+## 0.1.2 - 2025-04-09
+
+Drops compatibility with IDEA 22, Adds compatibility with IDEA 51
+
 ## 0.1.1 - 2023-11-15
 
 ### Fixed
