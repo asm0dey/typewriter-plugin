@@ -42,6 +42,26 @@ A setting carried by a marker at the head of a snippet, governing the snippet
 as a whole rather than a position within it: `raw`, `speed`, `jitter`,
 `newline`.
 
+## Snippet directory
+
+Where snippets live. Two of them, distinguished by role rather than by
+mechanism: the **global** directory is the speaker's toolkit, reusable across
+talks; the **project** directory holds one talk's steps and travels with its
+demo repository. A project snippet **shadows** a global snippet of the same
+relative name.
+
+## Sequence
+
+The talk's snippets in order, taken from the project directory. Only the
+project directory has a sequence; the global toolkit is not ordered, because
+its snippets are not steps in anything.
+
+## Cursor
+
+The sequence's position — which snippet comes next. It belongs to a session of
+working on a talk, not to the talk itself, and starts over each time the IDE
+does.
+
 ## Program
 
 The ordered sequence of steps parsed from a snippet. A step is text to type, a

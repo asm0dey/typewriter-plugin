@@ -1,7 +1,7 @@
 # TypeWriter 2 — Design
 
 Date: 2026-09-14
-Status: approved, pending implementation plan
+Status: approved; design questions resolved in review (see section 16)
 
 ## 1. Context
 
@@ -38,20 +38,25 @@ v1, not incidental:
 4. Authoring a snippet uses a real IDE editor.
 5. One command primitive that absorbs future command requests without engine
    changes.
+6. A talk-length sequence of snippets is drivable from one key.
 
 ## 3. Non-goals
 
 - Simulating typos and corrections, per-character speed curves, or bigram
   timing models.
+- Pausing and resuming a run. A run either completes or aborts.
 - Importing v1 snippets from `typewriter-snippets.xml`. Explicitly dropped.
 - Preserving v1's UI or storage format.
 
 ## 4. Architecture
 
 ```
-snippet dir
+snippet directory
   01-entity.kt
   02-beans.xml
+        |
+  [0] READ     FileDocumentManager.getDocument(vf).text
+               in-memory text, unsaved edits included
         |
   [1] FORMAT   CodeStyleManager.reformatText on a temp PsiFile,
                using the TARGET project's code style
@@ -59,48 +64,66 @@ snippet dir
   [2] PARSE    MarkerParser over the FORMATTED text
                -> Program: List<Step>
         |
-  [3] INDENT   baseIndent = indent at caret when the hotkey fired,
-               prepended to every line after the first (string math)
+  [3] INDENT   baseIndent computed once from the caret context,
+               prepended to every line after the first
         |
   [4] TYPE     verbatim, code point by code point
 ```
 
 Format precedes parse because commands are comments and formatters preserve
-comments. Formatting the raw file and then locating markers in the result avoids
+comments. Formatting the raw text and then locating markers in the result avoids
 any offset mapping through the formatter.
 
-Parsing happens per run, never cached. A snippet edited in an open tab takes
-effect on the next invocation.
+Parsing happens per run, never cached.
 
 ### Key invariant
 
 The player has no language knowledge. It inserts characters into a `Document`.
-Language is consulted for exactly two things, both at parse time: comment syntax
-and code style. This is the property that makes XML, Python, YAML, and Markdown
-work without per-language code.
+Language is consulted only during steps 1 to 3, all of which complete before the
+first character is typed, and all of which produce plain strings. This is the
+property that makes XML, Python, YAML, and Markdown work without per-language
+code, and it is the specific thing v1 got wrong by consulting the language
+*during* typing.
 
 ### Components
 
 | Component | Responsibility |
 |---|---|
-| `SnippetLibrary` (app service) | VFS-watched view of the snippet dir; file -> `Snippet{id, file, language}` |
+| `SnippetLibrary` (app service) | VFS-watched view of the snippet directories; file -> `Snippet{id, file, language}` |
 | `MarkerParser` | Formatted text -> `Program`, using the language's `Commenter` |
 | `Program` | Ordered `List<Step>`: `Type(text)`, `Pause(ms)`, `Action(id)` |
 | `Player` | Coroutine; executes a `Program` against an `Editor`; cancellable |
+| `RunService` (project service) | The active run, its `RangeMarker`, and the sequence cursor |
 | `TypeSnippetAction` | One dynamic action per snippet, registered at startup |
 | `SnippetDialog` | `EditorTextField` over the snippet file's real `Document`, plus timing fields |
 
 ## 5. Snippet format
 
-A snippet is a plain file with a real extension. The extension determines the
-language via `FileTypeManager.getFileTypeByFileName()` — the same mechanism that
-highlights the file in its editor tab, so the dialog's view and the parser can
-never disagree. There is no language selector.
+A snippet is a plain file with a real name. The name determines the language via
+`FileTypeManager.getFileTypeByFileName()` — the same mechanism that highlights
+the file in its editor tab, so the dialog's view and the parser can never
+disagree. There is no separate language setting on a snippet.
 
-### Commands
+### Authoritative text
 
-**A comment whose body starts with the sentinel `tw:` is a command, executed at
-exactly the position it occupies.** Every other comment is typed verbatim.
+A snippet's text is its **`Document`**, obtained through
+`FileDocumentManager.getDocument(virtualFile)` — not the bytes on disk. Unsaved
+edits therefore take effect immediately: edit a snippet in a tab during
+rehearsal, fire the hotkey, see the change, never save.
+
+The `Document` is also the buffer behind the snippet dialog's `EditorTextField`
+and behind any open editor tab, so all three views are the same text by
+construction rather than by synchronisation.
+
+`Document` line breaks are always `\n` (platform guarantee), so line-separator
+normalisation is not something this plugin implements. A file with no
+`Document` — binary, or unreadable — is a pre-flight error.
+
+### Markers
+
+**A comment whose body begins with the sentinel `tw:` is a marker.** A marker
+carries commands or directives, is consumed during parsing, and never appears in
+the typed output. Every other comment is content and is typed verbatim.
 
 ```kotlin
 // tw: pause 800                              own line, fires before the line below
@@ -112,16 +135,52 @@ val x = compute()   // tw: pause 500          trailing, fires before the newline
 <bean <!-- tw: pause 400 --> id="x"/>         mid-line, XML block comment
 ```
 
-A command comment contributes zero characters. Text on either side joins
-seamlessly.
+The sentinel is configurable, defaulting to `tw:`. `tw::` escapes it:
+`// tw:: pause 800` types the literal text `// tw: pause 800`.
 
-Mid-line commands require a block comment, the only comment form that can sit
+Mid-line markers require a block comment, the only comment form that can sit
 inside a line and leave the file valid. Line-comment-only languages (Python,
-YAML, shell, Makefile) support own-line and trailing commands only.
+YAML, shell, Dockerfile, Makefile) support whole-line and trailing markers only.
 
-The sentinel is configurable, defaulting to `tw:`.
+### Whitespace consumption
 
-### Command vocabulary
+A marker is **whole-line** when it starts at the beginning of a line
+(disregarding indentation) and ends at the end of a line. It may span several
+lines. Anything else is **mid-line**.
+
+| Position | Consumed |
+|---|---|
+| Whole-line (one or many lines) | the entire line or lines, indentation and line terminators included |
+| Trailing | backwards through the whitespace separating it from the code, through the end of the marker; the line's own newline is kept |
+| Mid-line | the marker text only; adjacent horizontal whitespace belongs to the author |
+
+Whole-line consumption is what makes `// tw: pause 800` on its own line leave no
+blank line behind, and what makes a multi-line marker vanish entirely:
+
+```xml
+<!--
+tw: pause 500
+tw: action ReformatCode
+-->
+```
+
+The trailing rule and the whole-line rule converge, which matters because the
+formatter runs first and may move a comment between those positions. A trailing
+marker promoted to its own line, or an own-line marker pulled up to trailing,
+consumes to the same output either way.
+
+Mid-line takes the marker only, so a marker written flush produces flush output:
+
+```kotlin
+val user = repo.fin/* tw: complete */ding()   ->  types "repo.finding()" with completion between
+val user = repo.fin /* tw: complete */ding()  ->  types "repo.fin ding()"
+```
+
+### Commands
+
+**One marker may carry several commands, one per non-blank body line**, each
+carrying the sentinel, executed in order. A body line without the sentinel is a
+pre-flight error, on the assumption that it is a typo rather than intent.
 
 | Command | Meaning |
 |---|---|
@@ -130,12 +189,18 @@ The sentinel is configurable, defaulting to `tw:`.
 
 `action` subsumes v1's hardcoded `reformat` and every future request —
 `ReformatCode`, `CodeCompletion`, `EditorChooseLookupItem`, `GotoDeclaration`,
-`RunClass`. No plugin code is needed per new command. Sugar aliases may be added
-later as a pure lookup table.
+`RunClass`. No plugin code is needed per new command.
 
-### File-level directives
+`action` invokes the action with whatever scope the IDE gives it. `action
+ReformatCode` with no selection reformats the **whole file**, not the typed
+range. This is deliberate: an action id cannot carry a range, and inventing a
+range-scoped reformat primitive was considered and rejected. Select first if a
+demo needs narrower scope.
 
-Directives occupy the leading run of `tw:` comments at the top of the file.
+### Directives
+
+Directives are carried by the leading marker or markers of a file and govern the
+snippet as a whole.
 
 | Directive | Meaning |
 |---|---|
@@ -149,16 +214,15 @@ Directives occupy the leading run of `tw:` comments at the top of the file.
 val user = repo.find(id)
 ```
 
-Unset values inherit the global setting. Directives live in the file rather than
-a sidecar so they survive `git mv`, diff cleanly, and reuse the existing parser.
-
-### Escape
-
-`tw::` types a literal `tw:` marker.
-
-```kotlin
-// tw:: pause 800    ->  types  // tw: pause 800
+```xml
+<!--
+tw: raw
+tw: speed 80
+-->
 ```
+
+Unset values inherit the global setting. Directives live in the file rather than
+a sidecar so they survive `git mv`, diff cleanly, and reuse the same parser.
 
 ## 6. Formatting
 
@@ -185,14 +249,19 @@ result is discarded and the original is typed. Java's parser recovers from a
 missing `}` and formats such fragments correctly; the guard exists so a
 misbehaving formatter in some language can never damage a live demo.
 
+The guard also bounds comment movement. A formatter may move a marker between
+whole-line and trailing position, but it cannot change the non-whitespace
+sequence, so the marker still sits at the same point in the meaningful text —
+and the consumption rules in section 5 converge for those two positions.
+
 `raw` skips the format step entirely, for demos that deliberately type ugly code
 and then clean it up on camera with `// tw: action ReformatCode`.
 
 ## 7. Playback engine
 
 One coroutine per run on the EDT dispatcher, `delay()` between characters. The
-`Job` lives in a per-project service. A second invocation during a run is
-ignored, not queued.
+`Job` lives in `RunService`. A second invocation during a run is ignored, not
+queued.
 
 ```kotlin
 writeCommandAction(project, "TypeWriter") {   // groupId = runId
@@ -206,19 +275,98 @@ delay(base + jitter())
 Insertion is by **code point**, not `Char`. Inserting surrogate pairs one `Char`
 at a time places a broken half in the document.
 
-A shared `groupId` across the run makes Ctrl+Z undo the entire snippet as one
-step. Granularity intentionally breaks at `action` steps, which carry their own
-undo — a reformat should be separately undoable.
+### Base indent
 
-Caret offset is re-read from the caret model each character rather than
-accumulated, so nothing desyncs if the document changes underneath.
+`baseIndent` is computed **once, at pre-flight**, before a single character is
+typed:
+
+```kotlin
+baseIndent =
+    if (caret has non-whitespace before it on its line) caretColumnAsSpaces
+    else CodeStyleManager.getLineIndent(psiFile, caretOffset) ?: caretColumnAsSpaces
+```
+
+It is prepended to every line after the first; the first line needs none,
+because the caret is already there.
+
+The blank-line branch asks the IDE what indentation the target context calls for,
+so clicking an empty line inside a class body yields the class body's indent
+rather than column 0 — which is the common demo gesture and the case a plain
+caret-column rule gets wrong. The mid-line branch aligns continuation lines to
+the caret, which is what firing a snippet after `val x = ` should do.
+
+`getLineIndent` is nullable; the fallback to caret column covers plain text,
+unknown file types, and any language with no formatter — the same set that
+already loses the format step.
+
+**This is not per-line auto-indent.** Calling `adjustLineIndent` per typed
+newline, interleaved with insertion, is precisely v1's failure mode. Here it is
+one call, in the pre-flight phase, producing a plain `String` that the player
+concatenates. The formatter owns relative shape; `baseIndent` owns absolute
+position. Both apply under `raw`, which suppresses snippet formatting, not
+target-context indentation.
+
+This composition assumes the formatter normalises a fragment to column 0. If some
+language's formatter leaves an authored 4-space member at 4 spaces, `baseIndent`
+stacks to 8; in that case `baseIndent` must subtract the snippet's own common
+leading indent first. Pinned by golden test.
+
+### Typed range
+
+The run's output is tracked with a **`RangeMarker`**, not a pair of integers.
+Any `action` step changes text length — reformat, optimize imports, a completion
+insertion — after which every raw offset the player holds is stale. The
+`RangeMarker` survives document edits.
+
+The expected caret position after an `action` step is re-derived from the
+marker's end, not from the last insertion offset.
 
 ### Abort
 
-A `KeyListener` is installed on `editor.contentComponent` for the duration of a
-run: **any keypress cancels**. Programmatic steps call action handlers directly
-and generate no key events, so a run cannot abort itself. This is panic-proof on
-stage and requires no keymap entanglement.
+A run is cancelled by any of:
+
+- `AnActionListener.TOPIC` -> `beforeActionPerformed` — Escape, arrows, Save,
+  any IDE action.
+- `AnActionListener.TOPIC` -> `beforeEditorTyping` — the user typing a character.
+- The caret not being where the run left it, checked before each insertion —
+  which catches mouse clicks, since those are neither actions nor typing.
+
+Two exemptions: actions invoked by the run's own `action` steps, and any action
+whose id starts with `typewriter.`.
+
+An AWT `KeyListener` on the editor component was considered and rejected. It
+races against the hotkey that starts the run: the `keyReleased` events of a
+chord like `Ctrl+T, 1` arrive after the run begins and cancel it immediately, and
+auto-repeat defeats a grace period. Neither `AnActionListener` hook sees raw key
+events, so no race exists. Our text insertion uses `document.insertString` and
+never reaches `beforeEditorTyping`, so typing cannot self-trigger.
+
+The tradeoff accepted: a background activity routed through the action system can
+cancel a run. If that proves twitchy, the fix is an allowlist of ignorable action
+ids.
+
+### Recovery
+
+A run is **abortable but not resumable**. Aborting mid-snippet leaves partial
+text; re-firing would type the whole snippet again on top of it. Recovery is
+therefore explicit:
+
+- `groupId` is passed on every `writeCommandAction`, so native Ctrl+Z undoes the
+  run as one step *if* the platform merges adjacent same-group commands.
+- **`TypeWriter: Undo Run`** deletes the typed range in one write command,
+  straight off the `RangeMarker`. This is the guaranteed path, because it depends
+  only on code this plugin owns.
+
+The distinction matters because a run is asynchronous — type, suspend, type — and
+`executeCommand` must return synchronously, so no single command can wrap a run.
+Per-character commands sharing a `groupId` is the only route to native
+single-undo, and its merging behaviour across hundreds of characters, a `pause`,
+and an `action` is platform behaviour this plugin does not control. `groupId`
+costs one argument, so it is passed regardless; `Undo Run` is what is promised.
+
+`Undo Run` is enabled only while the document's modification stamp is unchanged
+since the run ended. Otherwise it would delete whatever now occupies those
+offsets.
 
 ### Timing
 
@@ -228,24 +376,42 @@ manual, via `pause`.
 
 ## 8. Library, actions, keymap
 
-Snippet directory: application-level setting, default `~/.typewriter`,
-overridable per project so `<project>/.typewriter` can be committed with the demo
-repository.
+### Directories
 
-**Action id is derived from the path relative to the snippet dir**, independent
-of which directory supplied it:
+Two directories contribute, and they **layer**:
+
+| Directory | Role |
+|---|---|
+| `~/.typewriter` (app setting, default) | the speaker's reusable toolkit across talks |
+| `<project>/.typewriter` (project setting) | one talk's steps, committed with the demo repo |
+
+A snippet in the project directory **shadows** a global snippet with the same
+relative path, the same resolution rule as `PATH` or nested `.gitignore`. Replace
+semantics were rejected: defining one project snippet would otherwise hide the
+speaker's entire global toolkit inside the repo they are working in.
+
+Subdirectories are allowed — `jcon26/01-entity.kt` — so several talks coexist in
+one repo. Shadowing matches on the full relative path. Ids are case-sensitive as
+authored, which is a documented sharp edge when a snippet directory moves between
+case-sensitive and case-insensitive filesystems.
+
+### Actions
+
+**Action id is the path relative to the snippet directory**, independent of which
+directory supplied it:
 
 ```
 01-entity.kt  ->  typewriter.snippet.01-entity.kt
 ```
 
-The action resolves the actual file at invoke time against the focused project.
-A single binding therefore drives the corresponding snippet in every demo
-project.
+The action resolves the actual file at invoke time against the focused project,
+so a single binding drives the corresponding snippet in every demo project. Same
+relative path means same id means one winner, resolved by shadowing — there is no
+collision to arbitrate.
 
 Actions are registered in an `ApplicationInitializedListener`, early enough to
-precede keymap resolution. They are added to a declared group so they cluster in
-the keymap tree:
+precede keymap resolution, and added to a declared group so they cluster in the
+keymap tree:
 
 ```xml
 <group id="typewriter.snippets" text="TypeWriter" popup="true"/>
@@ -256,8 +422,54 @@ without restart. A deleted file unregisters its action, and its keymap binding i
 lost with it — so renaming a snippet costs its hotkey. Accepted; the alternative
 (ghost actions retained indefinitely) is worse.
 
-The plugin never writes to the keymap. The IDE owns bindings, which is precisely
-why they survive restart.
+The plugin never writes to the keymap. The IDE owns bindings, which is why they
+survive restart.
+
+### Sequence
+
+The `01-`, `02-` naming convention drives a cursor, so a talk-length demo needs
+one binding instead of a dozen.
+
+- **`TypeWriter: Type Next`** types the snippet at the cursor and advances.
+- **`TypeWriter: Type Previous`** steps back.
+- The snippet picker offers **start sequence here**, setting the cursor to any
+  snippet — which also covers jumping when a demo goes sideways.
+
+The sequence is the **project** directory only, sorted by relative path. Global
+snippets are utilities, not talk steps; folding them in would interleave the
+speaker's license-header snippet between steps 3 and 4. This turns the layering
+rule into a real distinction: project directory is this talk in order, global
+directory is the toolkit bound individually.
+
+The cursor lives in memory, per project, and resets on restart. Persisting it
+would mean reopening the IDE mid-talk silently resumes at step 7.
+
+### Snippet files in the IDE
+
+Snippet files are fragments — often deliberately incomplete or broken, since
+typing broken code and fixing it on camera is a demo pattern the `raw` directive
+exists to support. Analysis noise on them is therefore never signal.
+
+A `DefaultHighlightingSettingProvider` returns `FileHighlightingSetting.SKIP_HIGHLIGHTING`
+for any file under a snippet directory:
+
+```xml
+<defaultHighlightingSettingProvider implementation="...SnippetHighlightingSettingProvider"/>
+```
+
+The EP is `dynamic="true"` and the provider is a stateless predicate over a
+`VirtualFile`. It sets the default level; a manual override through the editor's
+highlighting-level widget still wins.
+
+`SKIP_HIGHLIGHTING` rather than `SKIP_INSPECTION`: the latter leaves the
+highlighting pass running, so parser errors survive and an unclosed class stays
+red — which is most snippets. What `SKIP_HIGHLIGHTING` costs is semantic
+colouring; lexer-based colouring (keywords, strings, comments, numbers) is
+applied by the editor rather than the daemon and survives.
+
+The formatter is unaffected, since formatting runs off PSI rather than the
+daemon. `raw`, format-on-play, and Reformat Code in a snippet's own tab all keep
+working.
 
 ## 9. UI
 
@@ -279,26 +491,55 @@ why they survive restart.
 
 The `EditorTextField` is constructed over the snippet file's existing `Document`,
 so it is a real editor — monospace, highlighting, completion — and every
-keystroke lands in the file. The dialog and an open editor tab are the same
-buffer; there is no copy and no sync layer.
+keystroke lands in the file.
 
 The timing fields read and write the file's directive header.
 
 The hotkey row is read-only and deep-links to Settings > Keymap.
 
-### Other entry points
+**Play closes the dialog, then runs.** The dialog is modal and covers the editor,
+so typing behind it is pointless; closing first also restores focus, which the
+abort listener and the caret check both assume. The abort listener installs a
+tick *after* the dialog is disposed, since dialog teardown can route actions
+through the action system and would otherwise cancel the run it just started.
 
-- **New snippet**: one field, filename with extension. Creates the file, opens it
-  in a normal editor tab. There is no custom text editor to maintain.
-- **Type Snippet...**: statically bound action opening a speed-search popup of
-  all snippets, for the long tail that does not warrant a hotkey.
-- **Type Ad-hoc**: the same snippet dialog over a scratch document. Paste, set
-  jitter, Play, nothing persisted. Replaces v1's dialog workflow.
+The target editor is captured when the dialog opens and re-validated at Play.
+
+### New snippet
+
+One dialog: a name field and a **file-type chooser** listing every registered
+non-binary `FileType`, so the list automatically covers whatever languages the
+IDE has installed. The chooser derives the *filename*, using
+`FileTypeManager.getAssociations(fileType)`:
+
+- extension matcher -> `snippet.kt`, the stem is editable
+- exact-name matcher -> prefills `Dockerfile`, `Makefile`, `.gitignore`
+
+An extension-only control cannot express file types identified by exact name,
+several of which are useful snippet types.
+
+Creating a snippet writes the file and opens it in a normal editor tab. There is
+no custom text editor to maintain.
+
+### Type Snippet…
+
+A statically bound action opening a speed-search popup of all snippets, for the
+long tail that does not warrant a hotkey. Also the entry point for **start
+sequence here**.
+
+### No ad-hoc mode
+
+Improvised text is a snippet like any other: `New snippet`, then `Play`. A
+separate ephemeral mode would reintroduce text that lives somewhere other than a
+file, which is the thing this design removed. The cost is that throwaway
+experiments accumulate as files to delete later; if that bites, IDE scratch files
+are an additive escape hatch.
 
 ## 10. Settings
 
-Snippet directory, base delay, jitter, newline pause, sentinel (`tw:`), and
-format-on-play. Plus the snippet list with `New snippet`.
+Snippet directory (app level, overridable per project), base delay, jitter,
+newline pause, sentinel (`tw:`), and format-on-play. Plus the snippet list with
+`New snippet`.
 
 ## 11. Errors and edge cases
 
@@ -310,35 +551,38 @@ nothing is typed.
 | Condition | Result |
 |---|---|
 | No focused editor, read-only file, or guarded region | error |
-| Snippet file missing or unreadable | error |
+| Snippet file missing, or has no `Document` | error |
+| Target editor is the snippet's own file | error |
 | Unknown `tw:` command or directive | error, `file:line` |
+| Marker body line without the sentinel | error, `file:line` |
 | `action <Id>` unknown to `ActionManager` | error, `file:line` |
-| Unknown extension (no commenter, no formatter) | warn, proceed without commands or formatting |
+| Unknown file type (no commenter, no formatter) | warn, proceed without commands or formatting |
 | Snippet language != target file language | warn, proceed |
 | Format guard tripped | warn, proceed verbatim |
 | Empty snippet | warn, no-op |
 
 ### Runtime
 
-- `action` throws: cancel the run, show a balloon. Text already typed remains and
-  is still one undo group.
+- `action` throws: cancel the run, show a balloon. Text already typed remains,
+  and `Undo Run` still removes it.
 - Editor closed or project disposed: job cancelled through the parent scope.
 
 ### Edges
 
 - Code-point insertion (see section 7).
-- CRLF normalized to `\n` at read; the document's own separator applies.
 - A selection present at start is replaced, matching real typing.
 - Multiple carets: primary only, warn.
 - Tabs survive under `raw`; otherwise the formatter decides.
-- A snippet containing only commands runs them and types nothing.
+- A snippet containing only markers runs its commands and types nothing.
+- The typed `\n` goes into the target document, so the target file's own line
+  separator applies when it is saved. A snippet never imposes line endings.
 
 ## 12. Testing
 
 The platform layer is testable with `LightJavaCodeInsightFixtureTestCase`, so
 nearly everything runs in CI.
 
-**The plugin itself depends only on `com.intellij.modules.platform`.** It reaches
+**The plugin itself depends only on `com.intellij.modules.platform.`** It reaches
 languages through the generic `FileType`, `Commenter`, and `CodeStyleManager`
 APIs and never names one, which is what makes new languages work for free. The
 multi-language golden tests are the only thing needing language support, so those
@@ -359,17 +603,27 @@ exact regression it exists to catch.
 
 - **Golden tests**, one per language (Java, Kotlin, XML, Python, Markdown,
   Dockerfile, plain text): input file -> expected document text, in both
-  format-on and `raw` modes.
-- **Parser**: own-line, trailing, and mid-line block markers; `tw::` escape;
-  directive header; non-`tw:` comments typed verbatim; `JpaRepository<Courier,
-  Long>` parsed as plain text (v1 regression).
+  format-on and `raw` modes. Plus a CRLF-authored fixture, which pins that `raw`
+  means "identical to the document text", not "identical to the bytes".
+- **Parser**: whole-line, trailing, mid-line, and multi-line markers; multiple
+  commands in one marker; `tw::` escape; directive header; non-`tw:` comments
+  typed verbatim; `JpaRepository<Courier, Long>` parsed as plain text (v1
+  regression).
+- **Whitespace consumption**: each of the three rules, plus the convergence
+  property — a trailing marker and the same marker on its own line produce
+  identical output.
 - **Format guard**: property test asserting the whitespace-equivalence rule and
   that violations discard the formatted result.
+- **Base indent**: caret on a blank line inside a class body yields the class
+  body's indent; caret mid-line yields the caret column; `getLineIndent` null
+  falls back to caret column. Plus the fragment-dedent assumption from section 7.
 - **Player**: delay 0, jitter 0 -> deterministic final document.
 - **Actions**: file created -> action registered; file deleted -> action
-  unregistered.
+  unregistered; project snippet shadows a global snippet of the same relative
+  path.
 
-Manual only: how the typing looks on video.
+Manual only: how the typing looks on video, and whether native Ctrl+Z merges a
+whole run.
 
 ### Acceptance test 1
 
@@ -415,7 +669,7 @@ public class CourierService {
     }
 ```
 
-Expected output with `// tw: raw`: byte-for-byte identical to the input,
+Expected output with `// tw: raw`: identical to the snippet's document text,
 including the column-0 comment and the trailing space.
 
 The only difference between the two modes is:
@@ -432,7 +686,7 @@ Asserted in both modes:
   no command parsing and no auto-close.
 - Both blank lines survive.
 - `// No need...` is typed as text; only its indentation differs between modes.
-- Caret base indent is applied on top of the above in both modes.
+- Base indent is applied on top of the above in both modes.
 
 This case crashes v1 before typing a character, and is the primary regression
 guard.
@@ -461,8 +715,8 @@ ENTRYPOINT ["java","-jar","/app/app.jar"]
 
 Asserted invariants, format-on:
 
-- `# tw: pause 500` is consumed. It contributes zero characters, and the typed
-  output begins at `FROM`.
+- `# tw: pause 500` is a whole-line marker: the line and its terminator are
+  consumed, and the typed output begins at `FROM`.
 - `# install the app` is typed verbatim as text. It is a comment, but its body
   does not begin with the sentinel.
 - Every `\` continuation is preserved and its line break survives. Continuation
@@ -471,19 +725,18 @@ Asserted invariants, format-on:
 - The blank lines survive.
 
 Asserted with the `raw` directive, written as `# tw: raw` because directives use
-the file's own comment syntax: output is byte-for-byte identical to the input,
-including the ragged continuation indentation and the doubled spaces in the
+the file's own comment syntax: output is identical to the snippet's document
+text, including the ragged continuation indentation and the doubled spaces in the
 `COPY` line.
 
 **The format-on golden file is generated, not guessed.** IntelliJ's Dockerfile
-formatter decides whether the ragged continuation indents and the `COPY`
-spacing get normalized. The implementation captures the real formatter's output
-once, a human reviews it, and it is committed as the golden file. This spec
-asserts the invariants above, not a byte-exact formatted output it cannot
-verify in advance.
+formatter decides whether the ragged continuation indents and the `COPY` spacing
+get normalized. The implementation captures the real formatter's output once, a
+human reviews it, and it is committed as the golden file. This spec asserts the
+invariants above, not a byte-exact formatted output it cannot verify in advance.
 
-Mid-line commands are unavailable in Dockerfile, as in every line-comment-only
-language. Own-line and trailing commands work.
+Mid-line markers are unavailable in Dockerfile, as in every line-comment-only
+language. Whole-line and trailing markers work.
 
 ## 13. Stack and release
 
@@ -526,9 +779,12 @@ recreated as files.
 
 - Typo-and-correct simulation and richer timing models. Add when a recording
   actually looks wrong.
+- Pause and resume of a live run. The abort path exists; resuming is additive.
 - Sugar aliases for common `action` ids.
-- A file-type combo in the New-snippet dialog, purely to append the extension.
+- IDE scratch files as a second, non-bindable class of snippet, if snippet-
+  directory clutter becomes a problem.
 - Raw sentinel support for languages with no commenter (JSON, plain text).
+- An allowlist of action ids that do not abort a run.
 - Preview showing the exact text a snippet will produce. Nearly free given the
   deterministic pipeline, but not required for 1.0.0.
 
@@ -538,6 +794,9 @@ recreated as files.
   keymap resolves bindings, or bindings for unknown ids may be dropped. Mitigated
   by `ApplicationInitializedListener`; must be verified against a real restart
   early in implementation.
+- **Fragment dedent assumption.** Section 7's base-indent composition assumes the
+  formatter normalises a fragment to column 0. Verify per language; the fallback
+  is to subtract the snippet's common leading indent.
 - **Formatter behavior on fragments** varies by language. The
   whitespace-equivalence guard bounds the damage to "no formatting applied",
   never "wrong output".
@@ -548,3 +807,24 @@ recreated as files.
   warning. In tests that condition must skip loudly rather than pass.
 - **`EditorTextField` over a file-backed `Document`** must not hold the document
   in a modified-but-unsaved state when the dialog closes. Save on OK.
+
+## 16. Resolved design questions
+
+Settled during design review. Recorded because several rejected options are the
+obvious first guess.
+
+| # | Question | Resolution |
+|---|---|---|
+| 1 | What is `baseIndent`? | `getLineIndent` at the caret, once at pre-flight; caret column when mid-line or when null. Rejected: caret column alone (wrong for the click-a-blank-line-in-a-class gesture); per-line `adjustLineIndent` (v1's failure mode). |
+| 2 | Abort mechanism | `AnActionListener` (`beforeActionPerformed` + `beforeEditorTyping`) plus a caret check. Rejected: AWT `KeyListener`, which races the hotkey's own key-up and auto-repeat. |
+| 3 | `action ReformatCode` scope | Left as plain action semantics: whole file. Rejected: a range-scoped `reformat` primitive; implicit selection of the typed range. The `RangeMarker` requirement stands independently. |
+| 4 | Marker whitespace consumption | Whole-line takes its lines; trailing takes preceding whitespace; mid-line takes only itself. |
+| 5 | Commands per marker | Many, one per sentinel-carrying body line. |
+| 6 | Snippet's authoritative text | The `Document`, not the bytes. Corrects the CRLF and byte-identity claims. |
+| 7 | Project vs global directory | Layer, project shadows global. Rejected: replace, which hides the global toolkit. |
+| 8 | Ad-hoc mode | Removed. It is `New snippet` + `Play`. |
+| 9 | Pause and resume | Not in 1.0. Abort only; `Undo Run` recovers. |
+| 10 | Snippet files as project files | Suppress analysis on them. Rejected: excluding the directory, which kills highlighting too. |
+| 11 | Which highlighting level | `SKIP_HIGHLIGHTING`. `SKIP_INSPECTION` leaves parser errors, and most snippets are incomplete by design. |
+| 12 | Driving a talk-length sequence | `Type Next` over a cursor, project directory only, picker sets the cursor. |
+| 13 | Undo of a run | `groupId` for free, plus `TypeWriter: Undo Run` as the guarantee. A command cannot span a `delay()`, so native single-undo is not ours to promise. |
