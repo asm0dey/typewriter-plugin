@@ -1040,7 +1040,7 @@ git commit -m "feat: compute and apply base indent from the caret context"
 
 **Interfaces:**
 - Consumes: `Step`, `Timing`, `Program` (Task 3).
-- Produces: `class Player(project: Project, editor: Editor, marker: RangeMarker, runId: Any)` with
+- Produces: `class Player(project: Project, editor: Editor, runId: Any)` with
   `suspend fun play(steps: List<Step>, timing: Timing, onCaretDrift: () -> Unit = {})`.
 
 Insertion is by **code point**, never `Char` — a surrogate pair inserted one `Char`
@@ -1069,7 +1069,7 @@ class PlayerTest : LightJavaCodeInsightFixtureTestCase() {
         val marker: RangeMarker = editor.document.createRangeMarker(
             editor.caretModel.offset, editor.caretModel.offset,
         )
-        runBlocking { Player(project, editor, marker, Any()).play(steps, instant) }
+        runBlocking { Player(project, editor, Any()).play(steps, instant) }
         return editor.document.text
     }
 
@@ -1100,7 +1100,7 @@ class PlayerTest : LightJavaCodeInsightFixtureTestCase() {
         val offset = editor.caretModel.offset
         val marker = editor.document.createRangeMarker(offset, offset)
         marker.isGreedyToRight = true
-        runBlocking { Player(project, editor, marker, Any()).play(listOf(Step.Type("ABC")), instant) }
+        runBlocking { Player(project, editor, Any()).play(listOf(Step.Type("ABC")), instant) }
         assertEquals("ABC", editor.document.getText(marker.textRange))
     }
 }
@@ -1133,7 +1133,6 @@ import kotlin.random.Random
 class Player(
     private val project: Project,
     private val editor: Editor,
-    private val marker: RangeMarker,
     private val runId: Any,
 ) {
     /** Set while this player invokes an IDE action, so the abort watcher ignores it. */
@@ -1290,7 +1289,7 @@ class TypingIndependenceTest : LightJavaCodeInsightFixtureTestCase() {
             val editor = myFixture.editor
             val marker = editor.document.createRangeMarker(0, 0)
             runBlocking {
-                Player(project, editor, marker, Any()).play(listOf(Step.Type(hazard)), Timing(0, 0, 0))
+                Player(project, editor, Any()).play(listOf(Step.Type(hazard)), Timing(0, 0, 0))
             }
             return editor.document.text
         } finally {
@@ -1319,7 +1318,7 @@ class TypingIndependenceTest : LightJavaCodeInsightFixtureTestCase() {
         val column = BaseIndent.caretColumn(editor.document, offset)
         val payload = BaseIndent.apply("int a = 1;\nif (a > 0) {\n    a++;\n}", indent, column)
         val marker = editor.document.createRangeMarker(offset, offset)
-        runBlocking { Player(project, editor, marker, Any()).play(listOf(Step.Type(payload)), Timing(0, 0, 0)) }
+        runBlocking { Player(project, editor, Any()).play(listOf(Step.Type(payload)), Timing(0, 0, 0)) }
         assertEquals(
             "class Host {\n    int a = 1;\n    if (a > 0) {\n        a++;\n    }\n}",
             editor.document.text,
@@ -1994,7 +1993,7 @@ class RunService(private val project: Project, private val scope: CoroutineScope
         val marker = editor.document.createRangeMarker(offset, offset).apply {
             isGreedyToRight = true
         }
-        val player = Player(project, editor, marker, Any())
+        val player = Player(project, editor, Any())
         currentPlayer = player
         val watcherParent = Disposer.newDisposable("typewriter-run")
         AbortWatcher(player) { cancel() }.install(watcherParent)
