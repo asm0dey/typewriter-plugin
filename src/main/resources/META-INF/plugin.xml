@@ -6,7 +6,13 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="TypeWriter" displayType="BALLOON"/>
+        <postStartupActivity implementation="com.github.asm0dey.typewriter.library.SnippetStartupActivity"/>
     </extensions>
+
+    <applicationListeners>
+        <listener class="com.github.asm0dey.typewriter.library.SnippetWatcher"
+                  topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+    </applicationListeners>
 
     <actions>
         <group id="typewriter.snippets" text="TypeWriter" popup="true"/>
