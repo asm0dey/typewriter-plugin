@@ -114,6 +114,7 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testSameNonWhitespaceIgnoresWhitespaceOnlyDifferences() {
+        // language="JAVA"
         assertTrue(SnippetFormatter.sameNonWhitespace("class A {\n    int x;\n}", "class A {\nint x;\n}"))
     }
 
