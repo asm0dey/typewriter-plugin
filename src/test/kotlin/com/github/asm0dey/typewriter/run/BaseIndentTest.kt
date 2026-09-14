@@ -123,8 +123,15 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
     // notion of "what indentation this context calls for".
     @Test
     fun testNullLineIndentFallsBackToTheCaretColumn() {
-        // language="TEXT"
-        val (indent, column) = indentAndColumn("if (true) {\n  <caret>\n}", "H.txt")
+        val (indent, column) = indentAndColumn(
+            // language="TEXT"
+            """
+            |if (true) {
+            |  <caret>
+            |}
+            """.trimMargin(),
+            "H.txt",
+        )
         assertEquals(2, indent.length)
         assertEquals(2, column)
     }

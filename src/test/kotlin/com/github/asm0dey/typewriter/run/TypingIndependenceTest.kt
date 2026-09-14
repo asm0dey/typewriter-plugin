@@ -18,15 +18,20 @@ import org.junit.jupiter.api.Test
  */
 class TypingIndependenceTest : TypeWriterFixtureTestCase() {
 
+    // Trailing "\n" is load-bearing: the fixture ends with a newline after the unclosed method
+    // body, so it's appended explicitly rather than relying on trimMargin, which would otherwise
+    // drop it as a trailing blank line.
     // language="JAVA"
-    private val hazard = "class T {\n" +
-        "    String s = \"hi (unbalanced\";\n" +
-        "    char c = 'x';\n" +
-        "    void m() {\n" +
-        "        if (a[0] > 1) {\n" +
-        "            f(\"}\");\n" +
-        "        }\n" +
-        "    }\n"
+    private val hazard = """
+        |class T {
+        |    String s = "hi (unbalanced";
+        |    char c = 'x';
+        |    void m() {
+        |        if (a[0] > 1) {
+        |            f("}");
+        |        }
+        |    }
+        """.trimMargin() + "\n"
 
     private fun typeWithFlags(on: Boolean): String {
         val s = CodeInsightSettings.getInstance()
@@ -73,21 +78,44 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun fragmentLandsAtBaseIndentInsideAnExistingBody() {
-        // language="JAVA"
-        fixture.configureByText("N.java", "class Host {\n<caret>\n}")
+        fixture.configureByText(
+            "N.java",
+            // language="JAVA"
+            """
+            |class Host {
+            |<caret>
+            |}
+            """.trimMargin(),
+        )
         val editor = fixture.editor
         val offset = editor.caretModel.offset
         val indent = BaseIndent.compute(fixture.project, fixture.file, editor.document, offset)
         val column = BaseIndent.caretColumn(editor.document, offset)
-        // language="JAVA"
-        val payload = BaseIndent.apply("int a = 1;\nif (a > 0) {\n    a++;\n}", indent, column)
+        val payload = BaseIndent.apply(
+            // language="JAVA"
+            """
+            |int a = 1;
+            |if (a > 0) {
+            |    a++;
+            |}
+            """.trimMargin(),
+            indent,
+            column,
+        )
         val marker = editor.document.createRangeMarker(offset, offset)
         runBlocking {
             Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type(payload)), Timing(0, 0, 0))
         }
         assertEquals(
             // language="JAVA"
-            "class Host {\n    int a = 1;\n    if (a > 0) {\n        a++;\n    }\n}",
+            """
+            |class Host {
+            |    int a = 1;
+            |    if (a > 0) {
+            |        a++;
+            |    }
+            |}
+            """.trimMargin(),
             editor.document.text,
         )
     }

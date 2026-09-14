@@ -21,7 +21,11 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     fun testWholeLineMarkerLeavesNoBlankLine() {
         assertEquals(
             // language="JAVA"
-            "class A {\n    int x;\n}",
+            """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin(),
             typed(
                 // language="JAVA"
                 """
@@ -38,7 +42,11 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     fun testWholeLineMarkerKeepsItsIndentation() {
         assertEquals(
             // language="JAVA"
-            "class A {\n    int x;\n}",
+            """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin(),
             typed(
                 // language="JAVA"
                 """
@@ -55,7 +63,11 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     fun testTrailingMarkerDropsSeparatingWhitespaceKeepsNewline() {
         assertEquals(
             // language="JAVA"
-            "class A {\n    int x;\n}",
+            """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin(),
             typed(
                 // language="JAVA"
                 """
@@ -71,7 +83,11 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     fun testMidLineMarkerConsumesFollowingWhitespace() {
         assertEquals(
             // language="JAVA"
-            "class A {\n    int y = repo.finding();\n}",
+            """
+            |class A {
+            |    int y = repo.finding();
+            |}
+            """.trimMargin(),
             typed(
                 // language="JAVA"
                 """
@@ -87,7 +103,11 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     fun testMidLineMarkerKeepsPrecedingWhitespace() {
         assertEquals(
             // language="JAVA"
-            "class A {\n    int y = a + b;\n}",
+            """
+            |class A {
+            |    int y = a + b;
+            |}
+            """.trimMargin(),
             typed(
                 // language="JAVA"
                 """
@@ -121,7 +141,11 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     fun testEscapedSentinelIsTypedUnescaped() {
         assertEquals(
             // language="JAVA"
-            "class A {\n// tw: pause 800\n}",
+            """
+            |class A {
+            |// tw: pause 800
+            |}
+            """.trimMargin(),
             typed(
                 // language="JAVA"
                 """

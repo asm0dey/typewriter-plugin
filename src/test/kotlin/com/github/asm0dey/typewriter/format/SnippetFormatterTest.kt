@@ -118,15 +118,35 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
     @Test
     fun testSameNonWhitespaceIgnoresWhitespaceOnlyDifferences() {
         // language="JAVA"
-        assertTrue(SnippetFormatter.sameNonWhitespace("class A {\n    int x;\n}", "class A {\nint x;\n}"))
+        val a = """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin()
+        // language="JAVA"
+        val b = """
+            |class A {
+            |int x;
+            |}
+            """.trimMargin()
+        assertTrue(SnippetFormatter.sameNonWhitespace(a, b))
     }
 
     @Test
     fun testSameNonWhitespaceDetectsAnAddedLine() {
         @Language("JAVA")
-        val a = "class A {\n    int x;\n}"
+        val a = """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin()
         @Language("JAVA")
-        val b = "import java.util.List;\nclass A {\n    int x;\n}"
+        val b = """
+            |import java.util.List;
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin()
         assertFalse(SnippetFormatter.sameNonWhitespace(a, b))
     }
 
@@ -141,11 +161,26 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
     @Test
     fun testReconcileLinesTakesFormattedIndentationOntoOriginalStructure() {
         @Language("JAVA")
-        val original = "class A {\nint x;\n}"
+        val original = """
+            |class A {
+            |int x;
+            |}
+            """.trimMargin()
         @Language("JAVA")
-        val formatted = "class A {\n    int x;\n}"
-        // language="JAVA"
-        assertEquals("class A {\n    int x;\n}", SnippetFormatter.reconcileLines(original, formatted))
+        val formatted = """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin()
+        assertEquals(
+            // language="JAVA"
+            """
+            |class A {
+            |    int x;
+            |}
+            """.trimMargin(),
+            SnippetFormatter.reconcileLines(original, formatted),
+        )
     }
 
     @Test

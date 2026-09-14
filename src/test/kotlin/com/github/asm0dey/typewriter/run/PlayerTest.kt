@@ -6,7 +6,6 @@ import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
-import com.intellij.openapi.editor.event.VisibleAreaEvent
 import com.intellij.openapi.editor.event.VisibleAreaListener
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -344,12 +343,8 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         val marker = document.createRangeMarker(offset, offset)
         val player = Player(fixture.project, editor, marker, Any())
         var drifted = false
-        val listener = object : VisibleAreaListener {
-            override fun visibleAreaChanged(e: VisibleAreaEvent) {
-                if (document.text == "a") {
-                    editor.caretModel.moveToOffset(0)
-                }
-            }
+        val listener = VisibleAreaListener {
+            if (document.text == "a") editor.caretModel.moveToOffset(0)
         }
         editor.scrollingModel.addVisibleAreaListener(listener)
         try {
