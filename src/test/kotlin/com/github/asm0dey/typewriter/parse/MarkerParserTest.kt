@@ -20,6 +20,7 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     @Test
     fun testWholeLineMarkerLeavesNoBlankLine() {
         assertEquals(
+            // language="JAVA"
             "class A {\n    int x;\n}",
             typed(
                 // language="JAVA"
@@ -36,6 +37,7 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     @Test
     fun testWholeLineMarkerKeepsItsIndentation() {
         assertEquals(
+            // language="JAVA"
             "class A {\n    int x;\n}",
             typed(
                 // language="JAVA"
@@ -52,6 +54,7 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     @Test
     fun testTrailingMarkerDropsSeparatingWhitespaceKeepsNewline() {
         assertEquals(
+            // language="JAVA"
             "class A {\n    int x;\n}",
             typed(
                 // language="JAVA"
@@ -67,6 +70,7 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     @Test
     fun testMidLineMarkerConsumesFollowingWhitespace() {
         assertEquals(
+            // language="JAVA"
             "class A {\n    int y = repo.finding();\n}",
             typed(
                 // language="JAVA"
@@ -82,6 +86,7 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     @Test
     fun testMidLineMarkerKeepsPrecedingWhitespace() {
         assertEquals(
+            // language="JAVA"
             "class A {\n    int y = a + b;\n}",
             typed(
                 // language="JAVA"
@@ -115,6 +120,7 @@ class MarkerParserTest : TypeWriterFixtureTestCase() {
     @Test
     fun testEscapedSentinelIsTypedUnescaped() {
         assertEquals(
+            // language="JAVA"
             "class A {\n// tw: pause 800\n}",
             typed(
                 // language="JAVA"

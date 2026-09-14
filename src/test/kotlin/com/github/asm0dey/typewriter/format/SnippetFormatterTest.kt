@@ -68,12 +68,15 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
             |foo(x);
             """.trimMargin()
         )
+        // language="JAVA"
         assertEquals(listOf("int x = 1;", "foo(x);"), out.text.lines())
     }
 
     @Test
     fun testFragmentDedentsToColumnZero() {
+        // language="JAVA"
         val out = format("    private final Repo repo;")
+        // language="JAVA"
         assertEquals("private final Repo repo;", out.text)
     }
 
@@ -129,6 +132,7 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testSameNonWhitespaceDetectsARenamedIdentifier() {
+        // language="JAVA"
         assertFalse(SnippetFormatter.sameNonWhitespace("int x = 1;", "int y = 1;"))
     }
 

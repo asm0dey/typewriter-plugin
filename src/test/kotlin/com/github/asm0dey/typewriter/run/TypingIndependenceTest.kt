@@ -73,17 +73,20 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun fragmentLandsAtBaseIndentInsideAnExistingBody() {
+        // language="JAVA"
         fixture.configureByText("N.java", "class Host {\n<caret>\n}")
         val editor = fixture.editor
         val offset = editor.caretModel.offset
         val indent = BaseIndent.compute(fixture.project, fixture.file, editor.document, offset)
         val column = BaseIndent.caretColumn(editor.document, offset)
+        // language="JAVA"
         val payload = BaseIndent.apply("int a = 1;\nif (a > 0) {\n    a++;\n}", indent, column)
         val marker = editor.document.createRangeMarker(offset, offset)
         runBlocking {
             Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type(payload)), Timing(0, 0, 0))
         }
         assertEquals(
+            // language="JAVA"
             "class Host {\n    int a = 1;\n    if (a > 0) {\n        a++;\n    }\n}",
             editor.document.text,
         )
@@ -110,11 +113,13 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
         val saved = s.AUTOINSERT_PAIR_BRACKET
         try {
             s.AUTOINSERT_PAIR_BRACKET = true
+            // language="JAVA"
             fixture.configureByText("LiveOn.java", "class T {<caret>}")
             fixture.type('(')
             val typedOn = fixture.editor.document.text
 
             s.AUTOINSERT_PAIR_BRACKET = false
+            // language="JAVA"
             fixture.configureByText("LiveOff.java", "class T {<caret>}")
             fixture.type('(')
             val typedOff = fixture.editor.document.text
@@ -126,6 +131,7 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
             )
 
             s.AUTOINSERT_PAIR_BRACKET = true
+            // language="JAVA"
             fixture.configureByText("PlayerOn.java", "class T {<caret>}")
             var editor = fixture.editor
             var marker = editor.document.createRangeMarker(editor.caretModel.offset, editor.caretModel.offset)
@@ -135,6 +141,7 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
             val playerOn = editor.document.text
 
             s.AUTOINSERT_PAIR_BRACKET = false
+            // language="JAVA"
             fixture.configureByText("PlayerOff.java", "class T {<caret>}")
             editor = fixture.editor
             marker = editor.document.createRangeMarker(editor.caretModel.offset, editor.caretModel.offset)

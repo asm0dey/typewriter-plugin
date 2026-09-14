@@ -11,6 +11,7 @@ class ScaffoldTest : TypeWriterFixtureTestCase() {
             // language="JAVA"
             "class A {}",
         )
+        // language="JAVA"
         assertEquals("class A {}", file.text)
     }
 }
