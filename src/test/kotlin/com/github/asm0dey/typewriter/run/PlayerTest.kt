@@ -15,6 +15,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -106,12 +107,16 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     // Proves two things about the Action branch at once: (1) runAction's tryToExecute call
     // resolves a real project/editor from editor.contentComponent alone -- Player builds no
     // DataContext of its own -- so a real action (EditorEnter) actually runs and mutates the
-    // document; (2) the expected caret position after the action is re-derived from the
-    // marker's end (spec section 7, "Typed range"), so the following Type step is accepted
-    // rather than flagged as drift. isGreedyToRight has to be set for this one: EditorEnter
-    // inserts its newline exactly at the marker's end offset, and a non-greedy marker (the
-    // RangeMarker default, and fine for the other tests, which don't touch this) would leave
-    // that insertion outside the tracked range, understating where the run actually left off.
+    // document; (2) after the action, the following Type step is accepted rather than flagged
+    // as drift -- expectedOffset is the live caret (editor.caretModel.offset), and EditorEnter
+    // happens to leave the caret exactly where its "\n" landed, so there is nothing for it to
+    // diverge from. This test passes under either rule (caret-based or the earlier
+    // marker-based one) since EditorEnter's caret and the typed range's end coincide here; see
+    // testTypingContinuesAtTheCaretAfterAnActionMovesIt below for the action that tells the two
+    // apart. isGreedyToRight is still set, matching what a real caller configures, so the
+    // RangeMarker -- which the caller depends on for the typed range and Undo Run, even though
+    // Player itself no longer reads it for this decision -- correctly grows to include the
+    // newline; it has no bearing on whether this particular test passes.
     @Test
     fun testActionStepRunsARealIdeActionAndTypingContinuesAfterIt() {
         fixture.configureByText("P.java", "<caret>")
@@ -126,26 +131,27 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         assertEquals("\nx", editor.document.text)
     }
 
-    // Pins the marker.endOffset choice (spec section 7, "Typed range": "The expected caret
-    // position after an `action` step is re-derived from the marker's end, not from the last
-    // insertion offset") against the brief's editor.caretModel.offset -- do not "fix" this back
-    // to the brief's version. The two only diverge when an action moves the caret away from the
+    // Pins the resolved rule (Player.kt: the expected caret position after an `action` step is
+    // the live caret, not marker.endOffset -- see that comment for why) against the marker-based
+    // rule this test used to assert before that design question was resolved -- do not "fix"
+    // this back to the marker. The two only diverge when an action moves the caret away from the
     // end of the typed range without changing the range itself: EditorLineStart does exactly
     // that. After typing "abc" the marker ends at offset 3; EditorLineStart moves the caret to
-    // column 0 but leaves the marker where it was. With marker.endOffset as the source of truth,
-    // the following Type("x") sees the caret (0) diverge from the typed range's end (3) and
-    // aborts via onCaretDrift, leaving "abc" untouched. With caretModel.offset it would instead
-    // treat 0 as the new baseline, see no drift, and type "x" at the start -- "xabc". Verified by
-    // temporarily changing the production line to editor.caretModel.offset: this test then fails
-    // (see task-6-report.md, fix round 1).
+    // column 0. With the caret as the source of truth, the following Type("x") sees no
+    // divergence (the caret is exactly where the run's own action left it) and types "x" there
+    // -- "xabc". With marker.endOffset it would instead read the caret's new position (0) as
+    // drift against the marker's end (3) and wrongly abort mid-snippet, leaving "abc" untyped --
+    // exactly the failure mode spec section 7's own completion example ("action CodeCompletion"
+    // followed by "action EditorChooseLookupItem" parking the caret inside inserted parens) would
+    // hit under the marker rule. Verified by temporarily reverting the production line to
+    // marker.endOffset: this test then fails with "abc" instead of "xabc" (see task-6-report.md,
+    // fix round 3).
     //
-    // Also asserts onCaretDrift() itself fires -- Task 11's only hook for telling the speaker a
-    // run was aborted (spec section 7, "Abort") -- rather than only inferring it from the
-    // document staying "abc". Every other test in this class passes the default no-op lambda, so
-    // without this assertion nothing in the suite notices if the onCaretDrift() call is deleted
-    // and the bare `return` is kept (verified: fix round 2, task-6-report.md).
+    // Asserts onCaretDrift() does NOT fire, alongside the document text, so a regression that
+    // reintroduces a spurious drift call after this kind of action is caught even if it somehow
+    // left the final text alone.
     @Test
-    fun testActionStepExpectedOffsetComesFromTheMarkerNotTheCaret() {
+    fun testTypingContinuesAtTheCaretAfterAnActionMovesIt() {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
         val offset = editor.caretModel.offset
@@ -158,8 +164,8 @@ class PlayerTest : TypeWriterFixtureTestCase() {
                     drifted = true
                 }
         }
-        assertEquals("abc", editor.document.text)
-        assertTrue(drifted)
+        assertEquals("xabc", editor.document.text)
+        assertFalse(drifted)
     }
 
     // Regression test for the exact risk this task calls out: a suspend function that only

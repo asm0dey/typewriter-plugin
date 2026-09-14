@@ -29,8 +29,9 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * [marker] tracks the run's typed range as the document grows; the caller creates and configures
  * it (including `isGreedyToRight`) and keeps it around afterwards to read the range or undo the
- * run. The player only reads it back to re-derive the expected caret position after an `action`
- * step, since any raw offset held before that step can go stale (spec section 7, "Typed range").
+ * run (Task 11's `Undo Run`). The player itself never reads it back -- the expected caret position
+ * after an `action` step is the live caret, not the marker; see the comment on that assignment for
+ * why.
  *
  * [runId] is passed as the `groupId` of every write command so native undo can merge a run's
  * per-character edits into one step (spec section 7, "Recovery").
@@ -57,17 +58,20 @@ class Player(
                 is Step.Pause -> delay(step.millis.milliseconds)
                 is Step.Action -> {
                     runAction(step.actionId)
-                    // Deliberately marker.endOffset, not editor.caretModel.offset -- do not
-                    // "simplify" this back to the caret. Spec section 7, "Typed range": "The
-                    // expected caret position after an `action` step is re-derived from the
-                    // marker's end, not from the last insertion offset." They read the same for
-                    // an action that moves the caret to the end of what was typed (EditorEnter,
-                    // a completion insertion), but diverge for one that relocates the caret
-                    // without touching the typed range (EditorLineStart): caretModel.offset would
-                    // treat the caret's new position as the baseline and let the next Type step
-                    // continue from there; marker.endOffset instead reads that as drift and stops
-                    // the run. See PlayerTest.testActionStepExpectedOffsetComesFromTheMarkerNotTheCaret.
-                    expectedOffset = marker.endOffset
+                    // Deliberately editor.caretModel.offset, not marker.endOffset -- do not
+                    // "simplify" this back to the marker. Resolved design question (see the
+                    // design spec's section 7 "Typed range" -- amended -- and the acceptance
+                    // brief for this decision): drift detection exists to catch the *user*
+                    // moving the caret, and spec section 7 "Abort" already exempts "actions
+                    // invoked by the run's own `action` steps" from that -- the run's own action
+                    // is not the user. Reading "re-derived ... not from the last insertion
+                    // offset" as ruling out a *stale held value* (which a freshly-read live caret
+                    // is not) reconciles with spec section 7's own completion example: `action
+                    // CodeCompletion` followed by `action EditorChooseLookupItem` can park the
+                    // caret inside a completion's inserted parens (e.g. `foo(|)`), short of the
+                    // typed range's end -- exactly the case marker.endOffset would misread as
+                    // drift and wrongly abort. See PlayerTest.testTypingContinuesAtTheCaretAfterAnActionMovesIt.
+                    expectedOffset = editor.caretModel.offset
                 }
                 is Step.Type -> {
                     var i = 0
