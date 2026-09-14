@@ -1,6 +1,7 @@
 package com.github.asm0dey.typewriter.run
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
+import org.intellij.lang.annotations.Language
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -75,6 +76,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testApplyPadsTheFirstLineByTheShortfall() {
+        @Language("JAVA")
         val payload =
             """
             |int a = 1;
@@ -84,6 +86,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
             """.trimMargin()
         val out = BaseIndent.apply(payload, "    ", 0)
         assertEquals(
+            // language="JAVA"
             """
             |    int a = 1;
             |    if (a > 0) {
@@ -96,6 +99,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testApplyDoesNotPadTheFirstLineWhenTheCaretIsAlreadyThere() {
+        @Language("JAVA")
         val payload =
             """
             |int a = 1;
@@ -104,6 +108,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
             """.trimMargin()
         val out = BaseIndent.apply(payload, "    ", 4)
         assertEquals(
+            // language="JAVA"
             """
             |int a = 1;
             |    if (a > 0) {
@@ -118,6 +123,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
     // notion of "what indentation this context calls for".
     @Test
     fun testNullLineIndentFallsBackToTheCaretColumn() {
+        // language="TEXT"
         val (indent, column) = indentAndColumn("if (true) {\n  <caret>\n}", "H.txt")
         assertEquals(2, indent.length)
         assertEquals(2, column)
@@ -125,6 +131,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testApplyLeavesEmptyLinesEmpty() {
+        @Language("JAVA")
         val payload =
             """
             |a;
@@ -133,6 +140,7 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
             """.trimMargin()
         val out = BaseIndent.apply(payload, "  ", 2)
         assertEquals(
+            // language="JAVA"
             """
             |a;
             |
