@@ -223,8 +223,14 @@ demo needs narrower scope.
 
 ### Directives
 
-Directives are carried by the leading marker or markers of a file and govern the
-snippet as a whole.
+Directives govern the snippet as a whole. **A marker body line is a directive or
+a command according to its name, not its position** — `raw`, `speed`, `jitter`
+and `newline` are directives; `pause` and `action` are commands. Position alone
+cannot decide, because a leading `pause` is a legitimate command that fires
+before the first character.
+
+A directive appearing after any text has been typed is a pre-flight error, which
+is what keeps "governs the snippet as a whole" true.
 
 | Directive | Meaning |
 |---|---|
@@ -244,6 +250,19 @@ tw: raw
 tw: speed 80
 -->
 ```
+
+**One directive per line works in every language**, which matters because Python,
+YAML, Dockerfile and Makefile have no block comment at all:
+
+```python
+# tw: raw
+# tw: speed 80
+import os
+```
+
+Two consecutive whole-line markers, both carrying directives. The multi-line
+block form above is sugar for languages that have block comments; nothing
+depends on it and no language is disadvantaged by lacking it.
 
 Unset values inherit the global setting. Directives live in the file rather than
 a sidecar so they survive `git mv`, diff cleanly, and reuse the same parser.
