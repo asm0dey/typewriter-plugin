@@ -2101,13 +2101,14 @@ git commit -m "feat: run service with action-level abort and undo-run recovery"
   `SnippetFormatter` (Task 4), `MarkerScanner`/`MarkerParser` (Tasks 2-3), `BaseIndent` (Task 5).
 - Produces:
   - `class TypeSnippetAction(relativePath: String) : AnAction`
-  - `object SnippetRegistrar { fun sync(); fun registeredIds(): Set<String> }`
+  - `object SnippetRegistrar { fun register(relativePaths: List<String>); fun registeredIds(): Set<String> }`
   - `class TypeNextAction : AnAction`, `class TypePreviousAction : AnAction`, `class UndoRunAction : AnAction`
   - `object SnippetRunner { fun run(project: Project, editor: Editor?, snippet: Snippet) }`
   - `object SnippetDirs { fun global(): VirtualFile?; fun project(project: Project): VirtualFile?; fun all(project: Project): List<Snippet> }` — consumed by Tasks 13, 14 and 17
 
-`SnippetRegistrar.sync()` registers one action per known relative path and
-unregisters ones whose files are gone. It **never touches the keymap** — the IDE
+`SnippetRegistrar.register(relativePaths)` is a full reconciliation: it registers one
+action per path given and unregisters every previously-registered id absent from that
+list. It **never touches the keymap** — the IDE
 owns bindings, which is the whole fix for v1's shortcut handling.
 
 - [ ] **Step 1: Write the failing test**
