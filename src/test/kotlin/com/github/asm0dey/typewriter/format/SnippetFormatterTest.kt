@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.format
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.ide.highlighter.JavaFileType
+import org.intellij.lang.annotations.Language
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -118,7 +119,9 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testSameNonWhitespaceDetectsAnAddedLine() {
+        @Language("JAVA")
         val a = "class A {\n    int x;\n}"
+        @Language("JAVA")
         val b = "import java.util.List;\nclass A {\n    int x;\n}"
         assertFalse(SnippetFormatter.sameNonWhitespace(a, b))
     }
@@ -132,8 +135,11 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testReconcileLinesTakesFormattedIndentationOntoOriginalStructure() {
+        @Language("JAVA")
         val original = "class A {\nint x;\n}"
+        @Language("JAVA")
         val formatted = "class A {\n    int x;\n}"
+        // language="JAVA"
         assertEquals("class A {\n    int x;\n}", SnippetFormatter.reconcileLines(original, formatted))
     }
 
