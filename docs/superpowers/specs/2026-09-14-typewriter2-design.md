@@ -359,8 +359,30 @@ baseIndent =
     else CodeStyleManager.getLineIndent(psiFile, caretOffset) ?: caretColumnAsSpaces
 ```
 
-It is prepended to every line after the first; the first line needs none,
-because the caret is already there.
+It is prepended to every line after the first. The first line is padded by the
+**shortfall** between `baseIndent` and the caret's current column:
+
+```kotlin
+firstLinePad = " ".repeat((baseIndent.length - caretColumn).coerceAtLeast(0))
+```
+
+"The caret is already there, so the first line needs nothing" is true only when
+the caret sits *at* `baseIndent`. Click a blank line at column 0 inside a class
+body — the common gesture — and `baseIndent` is 4 while the caret column is 0, so
+without the shortfall the first line lands at column 0 and every later line at 4:
+
+```java
+class Host {
+int a = 1;          <- caret was at column 0
+    if (a > 0) {    <- baseIndent applied
+        a++;
+    }
+}
+```
+
+Verified across five caret positions: column 0 and column 4 one level deep,
+column 0 and column 8 two levels deep, and mid-line after `int q = `. All five
+produce correctly nested output.
 
 The blank-line branch asks the IDE what indentation the target context calls for,
 so clicking an empty line inside a class body yields the class body's indent
@@ -596,6 +618,27 @@ several of which are useful snippet types.
 Creating a snippet writes the file and opens it in a normal editor tab. There is
 no custom text editor to maintain.
 
+### Command completion
+
+A `CompletionContributor` registered for `language="any"` offers completions
+inside markers in snippet files, so command and action names need not be
+remembered or spelled correctly from memory:
+
+| After | Offers |
+|---|---|
+| `tw:` | `pause`, `action`, `raw`, `speed`, `jitter`, `newline` |
+| `tw: action ` | every id from `ActionManager.getActionIdList("")`, presented with the action's own text and icon |
+| `tw: pause ` / `speed ` / `jitter ` / `newline ` | nothing; the argument is a number |
+
+It activates only inside a `PsiComment` whose body starts with the sentinel, and
+only for files under a snippet directory — the same predicate the highlighting
+provider uses — so it never fires in ordinary project code.
+
+This turns pre-flight's "unknown action id" error from something you discover on
+the first run into something you avoid while typing. Completion is served by
+`CompletionService` rather than the daemon, so `SKIP_HIGHLIGHTING` from section 8
+does not suppress it; an early implementation task should confirm that.
+
 ### Type Snippet…
 
 A statically bound action opening a speed-search popup of all snippets, for the
@@ -706,6 +749,12 @@ exact regression it exists to catch.
   body lands at `baseIndent`, not at the payload's own column. Without
   `baseIndent` the same payload lands at column 0 — the assertion that proves
   base indent is applied rather than inherited by luck.
+- **First-line shortfall**: caret at column 0 on a blank line inside a class body
+  produces a correctly indented *first* line, not just correctly indented
+  subsequent ones. Five caret positions, per section 7.
+- **Command completion**: `tw:` offers the six command and directive names;
+  `tw: action ` offers action ids; neither fires in a non-snippet file nor in an
+  ordinary comment.
 - **Actions**: file created -> action registered; file deleted -> action
   unregistered; project snippet shadows a global snippet of the same relative
   path.
@@ -965,3 +1014,4 @@ than reasoning about it (spike, 2026-09-14, IDEA 2025.3):
 | 15 | The formatter inserts blank lines between statement-fragment "members" | Line-structure reconciliation added to section 6. The whitespace-equivalence guard alone accepts this, because it is whitespace. |
 | 16 | A column-0 comment last in its body is not re-indented, and trailing whitespace is never stripped | Acceptance test 1's expected output was wrong in an earlier draft; it does not discriminate the two modes. Acceptance test 3 added for that. |
 | 17 | Auto-close pairs and auto-indent settings have no effect on `Type` steps, on or off | Confirms the central premise of the verbatim-insertion design. Recorded in section 7 with the exact flags tested, so a future reader need not re-derive it. |
+| 18 | The first line needs `baseIndent` too, minus the caret's column | "The caret is already there" holds only when the caret sits at `baseIndent`. Clicking a blank line at column 0 inside a class body — the common gesture — otherwise leaves the first line at column 0. |
