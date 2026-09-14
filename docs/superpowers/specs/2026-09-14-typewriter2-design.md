@@ -322,6 +322,32 @@ delay(base + jitter())
 Insertion is by **code point**, not `Char`. Inserting surrogate pairs one `Char`
 at a time places a broken half in the document.
 
+### Independence from the user's typing settings
+
+`document.insertString` never reaches `TypedHandler`, so the IDE's smart-typing
+settings cannot affect a `Type` step. **Verified on Java 2025.3** by running the
+loop above over a hazard payload — an unbalanced `{`, an unmatched `(` inside a
+string literal, a `}` inside a string literal, `[`, and both quote styles — with
+these six flags all on and then all off:
+
+`AUTOINSERT_PAIR_BRACKET`, `AUTOINSERT_PAIR_QUOTE`, `SMART_INDENT_ON_ENTER`,
+`INSERT_BRACE_ON_ENTER`, `REFORMAT_BLOCK_ON_RBRACE`,
+`SURROUND_SELECTION_ON_QUOTE_TYPED`.
+
+Output was byte-identical to the source in both runs, and identical between the
+two runs. No brace was invented, no quote was paired, no line was re-indented.
+The same run confirmed surrogate pairs round-trip.
+
+This is a property of the mechanism rather than of Java — these settings are
+applied by `TypedHandler`, which is bypassed for every language — so one
+language demonstrates it. Golden tests still assert it per language, since they
+cost nothing once the fixture exists.
+
+**`action` steps are the exception, by design.** They invoke real IDE actions, so
+`action CodeCompletion` followed by `action EditorChooseLookupItem` honours
+auto-insert settings exactly as manual typing would. That is the point of opting
+into IDE behaviour explicitly: `Type` steps are hermetic, `action` steps are not.
+
 ### Base indent
 
 `baseIndent` is computed **once, at pre-flight**, before a single character is
@@ -673,6 +699,13 @@ exact regression it exists to catch.
 - **Mid-line marker whitespace**: a flush-authored marker yields flush output
   even though the formatter inserts a space after the comment.
 - **Player**: delay 0, jitter 0 -> deterministic final document.
+- **Typing-settings independence**: the hazard payload types byte-identically
+  with the six smart-typing flags all on and all off, and identically between the
+  two runs. Plus a surrogate-pair payload.
+- **Nested context**: a fragment typed with the caret inside an existing class
+  body lands at `baseIndent`, not at the payload's own column. Without
+  `baseIndent` the same payload lands at column 0 — the assertion that proves
+  base indent is applied rather than inherited by luck.
 - **Actions**: file created -> action registered; file deleted -> action
   unregistered; project snippet shadows a global snippet of the same relative
   path.
@@ -931,3 +964,4 @@ than reasoning about it (spike, 2026-09-14, IDEA 2025.3):
 | 14 | The formatter inserts a space after a block comment | Mid-line markers consume the whitespace *following* them, not the marker alone. Otherwise completion-mid-identifier cannot work. |
 | 15 | The formatter inserts blank lines between statement-fragment "members" | Line-structure reconciliation added to section 6. The whitespace-equivalence guard alone accepts this, because it is whitespace. |
 | 16 | A column-0 comment last in its body is not re-indented, and trailing whitespace is never stripped | Acceptance test 1's expected output was wrong in an earlier draft; it does not discriminate the two modes. Acceptance test 3 added for that. |
+| 17 | Auto-close pairs and auto-indent settings have no effect on `Type` steps, on or off | Confirms the central premise of the verbatim-insertion design. Recorded in section 7 with the exact flags tested, so a future reader need not re-derive it. |
