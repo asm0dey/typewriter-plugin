@@ -8,6 +8,7 @@ import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.model.Step
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.vfs.VirtualFile
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -30,6 +31,18 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
 
     private fun program(vararg steps: Step, errors: List<ParseError> = emptyList()) =
         Program(steps.toList(), Directives(), errors)
+
+    // A FileType deliberately NOT a LanguageFileType -- it has no Language, hence no possible
+    // Commenter, regardless of which language plugins happen to be bundled in the test runtime.
+    // Chosen over reusing a real registered FileType so this test does not depend on which
+    // languages are (or are not) wired up to have a Commenter in this environment.
+    private object NoLanguageFileType : FileType {
+        override fun getName() = "NoLanguage"
+        override fun getDescription() = "a file type with no associated language"
+        override fun getDefaultExtension() = "nolang"
+        override fun getIcon() = null
+        override fun isBinary() = false
+    }
 
     @Test
     fun testNoEditorIsAnError() {
@@ -139,5 +152,30 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
         val checks = PreFlight.check(fixture.project, fixture.editor, snippet(), program(Step.Type("x")), null)
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning && it.message.contains("caret") })
+    }
+
+    // Spec section 11 "Pre-flight": "No focused editor, read-only file, or guarded region | error".
+    // The third clause of that row, on its own: a guarded block spanning the whole document
+    // guarantees the caret (wherever configureByText left it) sits inside it.
+    @Test
+    fun testGuardedRegionAtTheCaretIsAnError() {
+        fixture.configureByText("T.java", "<caret>abc")
+        val document = fixture.editor.document
+        document.createGuardedBlock(0, document.textLength)
+        val checks = PreFlight.check(fixture.project, fixture.editor, snippet(), program(Step.Type("x")), null)
+        assertTrue(checks.blocked())
+        assertTrue(checks.any { it is Check.Error && it.message.contains("guard") })
+    }
+
+    // Spec section 11 "Pre-flight": "Unknown file type (no commenter, no formatter) | warn,
+    // proceed without commands or formatting". Severity is warn, not error -- the run still goes
+    // ahead, just without marker handling.
+    @Test
+    fun testFileTypeWithNoCommenterIsAWarningNotAnError() {
+        fixture.configureByText("T.java", "<caret>")
+        val s = snippet("01.nolang").copy(fileType = NoLanguageFileType)
+        val checks = PreFlight.check(fixture.project, fixture.editor, s, program(Step.Type("x")), null)
+        assertFalse(checks.blocked())
+        assertTrue(checks.any { it is Check.Warning && it.message.contains("comment") })
     }
 }

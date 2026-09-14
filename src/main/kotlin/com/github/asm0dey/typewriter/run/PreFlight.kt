@@ -3,9 +3,11 @@ package com.github.asm0dey.typewriter.run
 import com.github.asm0dey.typewriter.model.Program
 import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.model.Step
+import com.github.asm0dey.typewriter.parse.CommentSyntax
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.openapi.project.Project
 
 /**
@@ -44,6 +46,9 @@ object PreFlight {
         if (!editor.document.isWritable) {
             checks += Check.Error("the target file is read-only")
         }
+        if (editor.document.getOffsetGuard(editor.caretModel.offset) != null) {
+            checks += Check.Error("the caret is inside a guarded region")
+        }
 
         val targetFile = FileDocumentManager.getInstance().getFile(editor.document)
         if (targetFile != null && targetFile == snippet.file) {
@@ -67,6 +72,12 @@ object PreFlight {
         if (targetFile != null && targetFile.fileType != snippet.fileType) {
             checks += Check.Warning(
                 "snippet is ${snippet.fileType.name} but the target file is ${targetFile.fileType.name}"
+            )
+        }
+        val language = (snippet.fileType as? LanguageFileType)?.language
+        if (language == null || !CommentSyntax.of(language).hasAny) {
+            checks += Check.Warning(
+                "${snippet.fileType.name} has no registered comment syntax; commands and formatting are unavailable"
             )
         }
         if (program.steps.isEmpty()) {
