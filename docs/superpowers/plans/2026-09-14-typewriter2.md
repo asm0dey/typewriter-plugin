@@ -1676,7 +1676,7 @@ git commit -m "feat: persist application and project settings"
 - Consumes: `Snippet` (Task 8), `Program`, `ParseError` (Task 3).
 - Produces:
   - `sealed interface Check { data class Error(val message: String) : Check; data class Warning(val message: String) : Check }`
-  - `PreFlight.check(project: Project, editor: Editor?, snippet: Snippet, program: Program, formatWarning: String?): List<Check>`
+  - `PreFlight.check(editor: Editor?, snippet: Snippet, program: Program, formatWarning: String?): List<Check>`
   - `fun List<Check>.blocked(): Boolean` — true when any `Check.Error` is present
 
 Spec section 11. Everything here runs before the first character; an error means
@@ -1715,7 +1715,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
         Program(steps.toList(), Directives(), errors)
 
     fun testNoEditorIsAnError() {
-        val checks = PreFlight.check(project, null, snippet(), program(Step.Type("x")), null)
+        val checks = PreFlight.check(null, snippet(), program(Step.Type("x")), null)
         assertTrue(checks.blocked())
     }
 
@@ -1749,7 +1749,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
 
     fun testEmptyProgramIsAWarningNotAnError() {
         myFixture.configureByText("T.java", "<caret>")
-        val checks = PreFlight.check(project, myFixture.editor, snippet(), program(), null)
+        val checks = PreFlight.check(myFixture.editor, snippet(), program(), null)
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning })
     }
@@ -1766,7 +1766,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
     fun testTypingIntoTheSnippetsOwnFileIsAnError() {
         val s = snippet("self.java")
         myFixture.openFileInEditor(s.file)
-        val checks = PreFlight.check(project, myFixture.editor, s, program(Step.Type("x")), null)
+        val checks = PreFlight.check(myFixture.editor, s, program(Step.Type("x")), null)
         assertTrue(checks.blocked())
     }
 }
@@ -2272,7 +2272,7 @@ object SnippetRunner {
             source, MarkerScanner.scan(psi, settings.state.sentinel), settings.state.sentinel,
         )
 
-        val checks = PreFlight.check(project, editor, snippet, program, formatWarning)
+        val checks = PreFlight.check(editor, snippet, program, formatWarning)
         checks.filterIsInstance<Check.Warning>().forEach {
             notify(project, it.message, NotificationType.WARNING)
         }

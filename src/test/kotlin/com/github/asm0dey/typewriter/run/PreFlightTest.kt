@@ -48,7 +48,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testNoEditorIsAnError() {
-        val checks = PreFlight.check(fixture.project, null, snippet(), program(Step.Type("x")), null)
+        val checks = PreFlight.check(null, snippet(), program(Step.Type("x")), null)
         assertTrue(checks.blocked())
     }
 
@@ -56,7 +56,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testParseErrorsAreErrors() {
         fixture.configureByText("T.java", "<caret>")
         val checks = PreFlight.check(
-            fixture.project, fixture.editor, snippet(),
+            fixture.editor, snippet(),
             program(Step.Type("x"), errors = listOf(ParseError(3, "unknown command"))), null,
         )
         assertTrue(checks.blocked())
@@ -67,7 +67,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testUnknownActionIdIsAnError() {
         fixture.configureByText("T.java", "<caret>")
         val checks = PreFlight.check(
-            fixture.project, fixture.editor, snippet(),
+            fixture.editor, snippet(),
             program(Step.Action("NoSuchActionIdAnywhere")), null,
         )
         assertTrue(checks.blocked())
@@ -77,7 +77,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testKnownActionIdIsAccepted() {
         fixture.configureByText("T.java", "<caret>")
         val checks = PreFlight.check(
-            fixture.project, fixture.editor, snippet(),
+            fixture.editor, snippet(),
             program(Step.Action("ReformatCode"), Step.Type("x")), null,
         )
         assertFalse(checks.blocked())
@@ -86,7 +86,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     @Test
     fun testEmptyProgramIsAWarningNotAnError() {
         fixture.configureByText("T.java", "<caret>")
-        val checks = PreFlight.check(fixture.project, fixture.editor, snippet(), program(), null)
+        val checks = PreFlight.check(fixture.editor, snippet(), program(), null)
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning })
     }
@@ -95,7 +95,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testFormatWarningIsCarriedThrough() {
         fixture.configureByText("T.java", "<caret>")
         val checks = PreFlight.check(
-            fixture.project, fixture.editor, snippet(), program(Step.Type("x")), "guard tripped",
+            fixture.editor, snippet(), program(Step.Type("x")), "guard tripped",
         )
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning && it.message.contains("guard tripped") })
@@ -105,7 +105,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testTypingIntoTheSnippetsOwnFileIsAnError() {
         val s = snippet("self.java")
         fixture.openFileInEditor(s.file)
-        val checks = PreFlight.check(fixture.project, fixture.editor, s, program(Step.Type("x")), null)
+        val checks = PreFlight.check(fixture.editor, s, program(Step.Type("x")), null)
         assertTrue(checks.blocked())
     }
 
@@ -116,7 +116,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testReadOnlyTargetIsAnError() {
         fixture.configureByText("T.java", "<caret>")
         fixture.editor.document.setReadOnly(true)
-        val checks = PreFlight.check(fixture.project, fixture.editor, snippet(), program(Step.Type("x")), null)
+        val checks = PreFlight.check(fixture.editor, snippet(), program(Step.Type("x")), null)
         assertTrue(checks.blocked())
         assertTrue(checks.any { it is Check.Error && it.message.contains("read-only") })
     }
@@ -130,7 +130,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
         fixture.configureByText("T.java", "<caret>")
         val s = snippet("gone.java")
         WriteAction.run<Exception> { s.file.delete(this) }
-        val checks = PreFlight.check(fixture.project, fixture.editor, s, program(Step.Type("x")), null)
+        val checks = PreFlight.check(fixture.editor, s, program(Step.Type("x")), null)
         assertTrue(checks.blocked())
     }
 
@@ -140,7 +140,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
         fixture.configureByText("T.java", "<caret>")
         val plainTextSnippet = snippet("01.txt").copy(fileType = PlainTextFileType.INSTANCE)
         val checks = PreFlight.check(
-            fixture.project, fixture.editor, plainTextSnippet, program(Step.Type("x")), null,
+            fixture.editor, plainTextSnippet, program(Step.Type("x")), null,
         )
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning })
@@ -151,7 +151,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testMultipleCaretsIsAWarningNotAnError() {
         fixture.configureByText("T.java", "ab<caret>c")
         fixture.editor.caretModel.addCaret(fixture.editor.offsetToVisualPosition(0))
-        val checks = PreFlight.check(fixture.project, fixture.editor, snippet(), program(Step.Type("x")), null)
+        val checks = PreFlight.check(fixture.editor, snippet(), program(Step.Type("x")), null)
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning && it.message.contains("caret") })
     }
@@ -164,7 +164,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
         fixture.configureByText("T.java", "<caret>abc")
         val document = fixture.editor.document
         document.createGuardedBlock(0, document.textLength)
-        val checks = PreFlight.check(fixture.project, fixture.editor, snippet(), program(Step.Type("x")), null)
+        val checks = PreFlight.check(fixture.editor, snippet(), program(Step.Type("x")), null)
         assertTrue(checks.blocked())
         assertTrue(checks.any { it is Check.Error && it.message.contains("guard") })
     }
@@ -176,7 +176,7 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
     fun testFileTypeWithNoCommenterIsAWarningNotAnError() {
         fixture.configureByText("T.java", "<caret>")
         val s = snippet("01.nolang").copy(fileType = NoLanguageFileType)
-        val checks = PreFlight.check(fixture.project, fixture.editor, s, program(Step.Type("x")), null)
+        val checks = PreFlight.check(fixture.editor, s, program(Step.Type("x")), null)
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning && it.message.contains("comment") })
     }

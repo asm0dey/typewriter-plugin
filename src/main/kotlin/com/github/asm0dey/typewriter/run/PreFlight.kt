@@ -8,7 +8,6 @@ import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileTypes.LanguageFileType
-import com.intellij.openapi.project.Project
 
 /**
  * The outcome of one pre-flight check (spec section 11, "Pre-flight"). An [Error] blocks the
@@ -31,7 +30,6 @@ fun List<Check>.blocked(): Boolean = any { it is Check.Error }
 object PreFlight {
 
     fun check(
-        project: Project,
         editor: Editor?,
         snippet: Snippet,
         program: Program,
@@ -58,8 +56,8 @@ object PreFlight {
             checks += Check.Error("${snippet.relativePath} has no readable text")
         }
 
-        for (error in program.errors) {
-            checks += Check.Error("${snippet.relativePath} line ${error.line}: ${error.message}")
+        for ((line, message) in program.errors) {
+            checks += Check.Error("${snippet.relativePath} line $line: $message")
         }
 
         val actionManager = ActionManager.getInstance()
