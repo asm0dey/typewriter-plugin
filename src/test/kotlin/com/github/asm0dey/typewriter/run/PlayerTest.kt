@@ -3,7 +3,6 @@ package com.github.asm0dey.typewriter.run
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.model.Timing
-import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.VisibleAreaListener
@@ -31,10 +30,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     private fun play(initial: String, steps: List<Step>): String {
         fixture.configureByText("P.java", initial)
         val editor = fixture.editor
-        val marker: RangeMarker = editor.document.createRangeMarker(
-            editor.caretModel.offset, editor.caretModel.offset,
-        )
-        runBlocking { Player(fixture.project, editor, marker, Any()).play(steps, instant) }
+        runBlocking { Player(fixture.project, editor, Any()).play(steps, instant) }
         return editor.document.text
     }
 
@@ -90,7 +86,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         val offset = editor.caretModel.offset
         val marker = editor.document.createRangeMarker(offset, offset)
         marker.isGreedyToRight = true
-        runBlocking { Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type("ABC")), instant) }
+        runBlocking { Player(fixture.project, editor, Any()).play(listOf(Step.Type("ABC")), instant) }
         assertEquals("ABC", editor.document.getText(marker.textRange))
     }
 
@@ -115,19 +111,13 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     // diverge from. This test passes under either rule (caret-based or the earlier
     // marker-based one) since EditorEnter's caret and the typed range's end coincide here; see
     // testTypingContinuesAtTheCaretAfterAnActionMovesIt below for the action that tells the two
-    // apart. isGreedyToRight is still set, matching what a real caller configures, so the
-    // RangeMarker -- which the caller depends on for the typed range and Undo Run, even though
-    // Player itself no longer reads it for this decision -- correctly grows to include the
-    // newline; it has no bearing on whether this particular test passes.
+    // apart.
     @Test
     fun testActionStepRunsARealIdeActionAndTypingContinuesAfterIt() {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
-        val offset = editor.caretModel.offset
-        val marker = editor.document.createRangeMarker(offset, offset)
-        marker.isGreedyToRight = true
         runBlocking {
-            Player(fixture.project, editor, marker, Any())
+            Player(fixture.project, editor, Any())
                 .play(listOf(Step.Action("EditorEnter"), Step.Type("x")), instant)
         }
         assertEquals("\nx", editor.document.text)
@@ -156,12 +146,9 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     fun testTypingContinuesAtTheCaretAfterAnActionMovesIt() {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
-        val offset = editor.caretModel.offset
-        val marker = editor.document.createRangeMarker(offset, offset)
-        marker.isGreedyToRight = true
         var drifted = false
         runBlocking {
-            Player(fixture.project, editor, marker, Any())
+            Player(fixture.project, editor, Any())
                 .play(listOf(Step.Type("abc"), Step.Action("EditorLineStart"), Step.Type("x")), instant) {
                     drifted = true
                 }
@@ -193,9 +180,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     fun testCancellationStopsTypingBeforeTheFirstCharacterWhenTheJobIsAlreadyCancelled() {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
-        val offset = editor.caretModel.offset
-        val marker = editor.document.createRangeMarker(offset, offset)
-        val player = Player(fixture.project, editor, marker, Any())
+        val player = Player(fixture.project, editor, Any())
         runBlocking {
             // A CoroutineScope owning its own child Job (parented to this runBlocking's job, so
             // the coroutine below stays a structural descendant rather than a detached one) --
@@ -248,9 +233,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
         val document = editor.document
-        val offset = editor.caretModel.offset
-        val marker = document.createRangeMarker(offset, offset)
-        val player = Player(fixture.project, editor, marker, Any())
+        val player = Player(fixture.project, editor, Any())
         var thrown: Throwable? = null
         runBlocking {
             val scope = CoroutineScope(Job(currentCoroutineContext()[Job]))
@@ -302,9 +285,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     private fun playerForDelayForTests(): Player {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
-        val offset = editor.caretModel.offset
-        val marker = editor.document.createRangeMarker(offset, offset)
-        return Player(fixture.project, editor, marker, Any())
+        return Player(fixture.project, editor, Any())
     }
 
     // Drift is the mouse-click case (spec section 7, "Abort", third bullet): the caret ends up
@@ -339,9 +320,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         fixture.configureByText("P.java", "<caret>")
         val editor = fixture.editor
         val document = editor.document
-        val offset = editor.caretModel.offset
-        val marker = document.createRangeMarker(offset, offset)
-        val player = Player(fixture.project, editor, marker, Any())
+        val player = Player(fixture.project, editor, Any())
         var drifted = false
         val listener = VisibleAreaListener {
             if (document.text == "a") editor.caretModel.moveToOffset(0)

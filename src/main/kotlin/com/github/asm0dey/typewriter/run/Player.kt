@@ -7,7 +7,6 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.project.Project
 import kotlinx.coroutines.currentCoroutineContext
@@ -27,11 +26,11 @@ import kotlin.time.Duration.Companion.milliseconds
  * the user's auto-close-pairs, auto-indent and smart-typing settings have no effect on the
  * output (spec section 7, "Independence from the user's typing settings").
  *
- * [marker] tracks the run's typed range as the document grows; the caller creates and configures
- * it (including `isGreedyToRight`) and keeps it around afterwards to read the range or undo the
- * run (Task 11's `Undo Run`). The player itself never reads it back -- the expected caret position
- * after an `action` step is the live caret, not the marker; see the comment on that assignment for
- * why.
+ * The run's typed range is tracked by a `RangeMarker` that belongs to the *caller*, not to this
+ * class: the caller (Task 11's `RunService`) creates and configures it (including
+ * `isGreedyToRight`) and keeps it around afterwards to read the range or undo the run (`Undo
+ * Run`). The player deliberately never consults it -- the expected caret position after an
+ * `action` step is the live caret, not a marker; see the comment on that assignment for why.
  *
  * [runId] is passed as the `groupId` of every write command so native undo can merge a run's
  * per-character edits into one step (spec section 7, "Recovery").
@@ -39,7 +38,6 @@ import kotlin.time.Duration.Companion.milliseconds
 class Player(
     private val project: Project,
     private val editor: Editor,
-    private val marker: RangeMarker,
     private val runId: Any,
 ) {
     /** Set while this player invokes an IDE action, so the abort watcher ignores it. */

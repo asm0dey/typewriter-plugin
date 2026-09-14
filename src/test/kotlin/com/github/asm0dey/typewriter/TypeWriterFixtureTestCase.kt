@@ -1,6 +1,5 @@
 package com.github.asm0dey.typewriter
 
-import com.intellij.openapi.Disposable
 import com.intellij.testFramework.common.ThreadLeakTracker
 import com.intellij.testFramework.fixtures.LightJavaCodeInsightFixtureTestCase5
 import com.intellij.testFramework.junit5.RunInEdt
@@ -18,7 +17,7 @@ abstract class TypeWriterFixtureTestCase : LightJavaCodeInsightFixtureTestCase5(
             // "SystemPropertyWatcher" background thread on Linux, regardless of headless mode.
             // It's a one-time, JVM-lifetime thread the platform's own allowlist doesn't yet know
             // about on this JDK/build, so register it as long-running to avoid a false leak report.
-            ThreadLeakTracker.longRunningThreadCreated(Disposable { }, "SystemPropertyWatcher")
+            ThreadLeakTracker.longRunningThreadCreated({ }, "SystemPropertyWatcher")
         }
     }
 }

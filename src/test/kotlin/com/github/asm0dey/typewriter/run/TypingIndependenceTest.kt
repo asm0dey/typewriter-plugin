@@ -52,9 +52,8 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
         try {
             fixture.configureByText(if (on) "On.java" else "Off.java", "")
             val editor = fixture.editor
-            val marker = editor.document.createRangeMarker(0, 0)
             runBlocking {
-                Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type(hazard)), Timing(0, 0, 0))
+                Player(fixture.project, editor, Any()).play(listOf(Step.Type(hazard)), Timing(0, 0, 0))
             }
             return editor.document.text
         } finally {
@@ -102,9 +101,8 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
             indent,
             column,
         )
-        val marker = editor.document.createRangeMarker(offset, offset)
         runBlocking {
-            Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type(payload)), Timing(0, 0, 0))
+            Player(fixture.project, editor, Any()).play(listOf(Step.Type(payload)), Timing(0, 0, 0))
         }
         assertEquals(
             // language="JAVA"
@@ -162,9 +160,8 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
             // language="JAVA"
             fixture.configureByText("PlayerOn.java", "class T {<caret>}")
             var editor = fixture.editor
-            var marker = editor.document.createRangeMarker(editor.caretModel.offset, editor.caretModel.offset)
             runBlocking {
-                Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type("(")), Timing(0, 0, 0))
+                Player(fixture.project, editor, Any()).play(listOf(Step.Type("(")), Timing(0, 0, 0))
             }
             val playerOn = editor.document.text
 
@@ -172,9 +169,8 @@ class TypingIndependenceTest : TypeWriterFixtureTestCase() {
             // language="JAVA"
             fixture.configureByText("PlayerOff.java", "class T {<caret>}")
             editor = fixture.editor
-            marker = editor.document.createRangeMarker(editor.caretModel.offset, editor.caretModel.offset)
             runBlocking {
-                Player(fixture.project, editor, marker, Any()).play(listOf(Step.Type("(")), Timing(0, 0, 0))
+                Player(fixture.project, editor, Any()).play(listOf(Step.Type("(")), Timing(0, 0, 0))
             }
             val playerOff = editor.document.text
 
