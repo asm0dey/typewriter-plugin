@@ -152,7 +152,7 @@ lines. Anything else is **mid-line**.
 |---|---|
 | Whole-line (one or many lines) | the entire line or lines, indentation and line terminators included |
 | Trailing | backwards through the whitespace separating it from the code, through the end of the marker; the line's own newline is kept |
-| Mid-line | the marker text only; adjacent horizontal whitespace belongs to the author |
+| Mid-line | the marker text, plus any horizontal whitespace immediately following it; whitespace *before* it belongs to the author |
 
 Whole-line consumption is what makes `// tw: pause 800` on its own line leave no
 blank line behind, and what makes a multi-line marker vanish entirely:
@@ -169,12 +169,27 @@ formatter runs first and may move a comment between those positions. A trailing
 marker promoted to its own line, or an own-line marker pulled up to trailing,
 consumes to the same output either way.
 
-Mid-line takes the marker only, so a marker written flush produces flush output:
+Mid-line consumption is one-sided because **the formatter inserts a space after a
+block comment.** Measured on Java 2025.3:
+
+| Authored | After the format step |
+|---|---|
+| `repo.fin/* tw: complete */ding()` | `repo.fin/* tw: complete */ ding()` |
+| `a/* tw: pause 200 */+b` | `a/* tw: pause 200 */ + b` |
+
+Taking the marker alone would therefore yield `repo.fin ding()` even when the
+author wrote it flush, breaking the completion-mid-identifier case that mid-line
+markers exist for. Consuming the following whitespace exactly cancels the
+formatter's rule:
 
 ```kotlin
-val user = repo.fin/* tw: complete */ding()   ->  types "repo.finding()" with completion between
-val user = repo.fin /* tw: complete */ding()  ->  types "repo.fin ding()"
+val user = repo.fin/* tw: complete */ding()    ->  "repo.finding()"
+val user = repo.fin /* tw: complete */ding()   ->  "repo.fin ding()"
+foo(a, /* tw: pause 200 */ b)                  ->  "foo(a, b)"
 ```
+
+Leading whitespace is left alone, so the author still controls whether a gap
+appears.
 
 ### Commands
 
@@ -254,6 +269,38 @@ whole-line and trailing position, but it cannot change the non-whitespace
 sequence, so the marker still sits at the same point in the meaningful text —
 and the consumption rules in section 5 converge for those two positions.
 
+### Line-structure reconciliation
+
+The guard permits any whitespace change, and one such change is visibly wrong:
+formatting a statement fragment inserts blank lines between what it reads as
+top-level members. Measured on Java 2025.3:
+
+```
+int x = 1;        formats to    int x = 1;
+foo(x);                         <blank>
+                                foo(x);
+```
+
+Method-body fragments are among the most common snippets, so this would put
+stray blank lines on screen routinely.
+
+Discarding the whole formatted result is too blunt — it throws away the
+indentation fix as well. Instead, reconcile: the guard has already proved the
+non-whitespace streams are identical, and blank lines contain no non-whitespace,
+so the non-blank lines of both texts correspond one-to-one.
+
+```
+result = for each line of the ORIGINAL:
+             blank     -> blank
+             non-blank -> the next non-blank line of the FORMATTED text
+```
+
+If the two non-blank line counts differ — line wrapping split a long line — fall
+back to verbatim and warn.
+
+Net rule, and the one to state in user-facing docs: **the format step fixes
+indentation and spacing; it never changes the number of lines or their order.**
+
 `raw` skips the format step entirely, for demos that deliberately type ugly code
 and then clean it up on camera with `// tw: action ReformatCode`.
 
@@ -306,10 +353,12 @@ concatenates. The formatter owns relative shape; `baseIndent` owns absolute
 position. Both apply under `raw`, which suppresses snippet formatting, not
 target-context indentation.
 
-This composition assumes the formatter normalises a fragment to column 0. If some
-language's formatter leaves an authored 4-space member at 4 spaces, `baseIndent`
-stacks to 8; in that case `baseIndent` must subtract the snippet's own common
-leading indent first. Pinned by golden test.
+This composition depends on the formatter normalising a fragment to column 0.
+**Verified on Java 2025.3**: `    private final CourierRepository courierRepository;`
+formatted as a standalone file dedents to column 0, as does a two-statement
+fragment authored at 8 spaces. Re-verify per language as golden tests are added;
+if some language's formatter preserves the authored indent, `baseIndent` must
+subtract the snippet's common leading indent before prepending.
 
 ### Typed range
 
@@ -616,7 +665,13 @@ exact regression it exists to catch.
   that violations discard the formatted result.
 - **Base indent**: caret on a blank line inside a class body yields the class
   body's indent; caret mid-line yields the caret column; `getLineIndent` null
-  falls back to caret column. Plus the fragment-dedent assumption from section 7.
+  falls back to caret column. Plus fragment dedent per language (verified for
+  Java; unverified elsewhere).
+- **Line-structure reconciliation**: a formatter-inserted blank line is removed
+  while indentation fixes survive; mismatched non-blank line counts fall back to
+  verbatim with a warning.
+- **Mid-line marker whitespace**: a flush-authored marker yields flush output
+  even though the formatter inserts a space after the comment.
 - **Player**: delay 0, jitter 0 -> deterministic final document.
 - **Actions**: file created -> action registered; file deleted -> action
   unregistered; project snippet shadows a global snippet of the same relative
@@ -648,36 +703,20 @@ public class CourierService {
     }
 ```
 
-Expected output, format on (default):
+Expected output, **both modes, identical to the input**.
 
-```java
-public interface CourierRepository extends JpaRepository<Courier, Long> {
+This is not what an earlier draft of this spec claimed, and the correction is
+worth recording because it is counter-intuitive. Measured on Java 2025.3:
 
-    List<Courier> findAllByCity(String city);
+- **A column-0 comment immediately before a closing brace is not re-indented.**
+  A column-0 comment elsewhere in the same body *is*. This snippet's comment sits
+  in the first position, so the formatter leaves it.
+- **Trailing whitespace is not stripped by the formatter.** Stripping trailing
+  spaces is a save action, not a formatting action.
 
-    // No need to define common CRUD methods manually
-}
-
-@Service
-@Transactional(readOnly = true)
-public class CourierService {
-
-    private final CourierRepository courierRepository;
-
-    public CourierService(CourierRepository courierRepository) {
-        this.courierRepository = courierRepository;
-    }
-```
-
-Expected output with `// tw: raw`: identical to the snippet's document text,
-including the column-0 comment and the trailing space.
-
-The only difference between the two modes is:
-
-```diff
--// No need to define common CRUD methods manually·
-+    // No need to define common CRUD methods manually
-```
+So this fixture does not discriminate format-on from `raw`; see acceptance test 3
+for one that does. Its value is as the v1 regression guard and as proof that the
+format step never *damages* a fragment.
 
 Asserted in both modes:
 
@@ -690,6 +729,54 @@ Asserted in both modes:
 
 This case crashes v1 before typing a character, and is the primary regression
 guard.
+
+### Acceptance test 3 — format-on vs raw discrimination
+
+Acceptance test 1 cannot tell the two modes apart, so this fixture does. A
+column-0 comment that is *not* last in its body, and a deliberately ragged
+indent:
+
+```java
+class CourierService {
+// explains the field
+        private final CourierRepository repo;
+    void reload() {
+int n = repo.count();
+    }
+}
+```
+
+The formatter's raw output, measured on Java 2025.3:
+
+```java
+class CourierService {
+    // explains the field
+    private final CourierRepository repo;
+                                          <- blank line INSERTED here
+    void reload() {
+        int n = repo.count();
+    }
+}
+```
+
+Expected output, format on, **after line-structure reconciliation**:
+
+```java
+class CourierService {
+    // explains the field
+    private final CourierRepository repo;
+    void reload() {
+        int n = repo.count();
+    }
+}
+```
+
+The absence of that blank line is the most important assertion in this test: it
+proves reconciliation ran, not merely the formatter. Every indentation fix
+survives it — the comment pulled to 4, the over-indented field pulled back to 4,
+the statement pushed to 8.
+
+Expected with `// tw: raw`: identical to the input.
 
 ### Acceptance test 2 — Dockerfile with line continuations
 
@@ -764,6 +851,9 @@ Differences from v1's build to be aware of:
 - Gradle **configuration cache and build cache are enabled by default**. Build
   logic must be configuration-cache-clean.
 - `kotlin.stdlib.default.dependency = false` — the Kotlin stdlib is not bundled.
+  **Mandatory, not cosmetic.** Without it, every platform test fails at fixture
+  setup with `NoSuchMethodError: SequencesKt.sequenceOf`, because the project's
+  Kotlin stdlib shadows the newer one the platform ships.
 
 Baseline moves from v1's 2024.3 (243) to **2025.2 (252)**. This is a fresh
 plugin with no installed-base constraint on the new code, and it removes doubt
@@ -790,16 +880,20 @@ recreated as files.
 
 ## 15. Risks
 
-- **Keymap resolution order.** Dynamic actions must be registered before the
-  keymap resolves bindings, or bindings for unknown ids may be dropped. Mitigated
-  by `ApplicationInitializedListener`; must be verified against a real restart
-  early in implementation.
-- **Fragment dedent assumption.** Section 7's base-indent composition assumes the
-  formatter normalises a fragment to column 0. Verify per language; the fallback
-  is to subtract the snippet's common leading indent.
-- **Formatter behavior on fragments** varies by language. The
-  whitespace-equivalence guard bounds the damage to "no formatting applied",
-  never "wrong output".
+- ~~**Keymap resolution order.**~~ **Resolved.** `KeymapImpl.writeOwnActionIds`
+  serialises every id in `actionIdToShortcuts` with no check against
+  `ActionManager`, and `writeScheme` returns the stored element verbatim when
+  untouched. Bindings for unregistered actions persist across save and reload, so
+  registration only has to happen before the user presses a key. v1's bug was
+  never a timing race; it simply never registered at startup.
+- ~~**Fragment dedent assumption.**~~ **Resolved for Java** (section 7). Still
+  unverified for other languages; each golden test confirms its own.
+- **Formatter behavior on fragments** varies by language, and Java alone produced
+  three surprises: a column-0 comment last in its body is not re-indented,
+  trailing whitespace is not stripped, and blank lines get inserted between
+  statement fragments. The guard plus reconciliation bound the damage to "less
+  formatting than hoped", never "wrong output" — but per-language golden files
+  must be **generated and reviewed**, never predicted.
 - **Language support in tests is plugin-provided.** Docker, Python, and Markdown
   `Commenter`s and formatters come from bundled plugins declared as test-only
   dependencies. If a language is unavailable at runtime the file falls back to
@@ -828,3 +922,12 @@ obvious first guess.
 | 11 | Which highlighting level | `SKIP_HIGHLIGHTING`. `SKIP_INSPECTION` leaves parser errors, and most snippets are incomplete by design. |
 | 12 | Driving a talk-length sequence | `Type Next` over a cursor, project directory only, picker sets the cursor. |
 | 13 | Undo of a run | `groupId` for free, plus `TypeWriter: Undo Run` as the guarantee. A command cannot span a `delay()`, so native single-undo is not ours to promise. |
+
+Three further corrections came from measuring the Java formatter directly rather
+than reasoning about it (spike, 2026-09-14, IDEA 2025.3):
+
+| # | Finding | Consequence |
+|---|---|---|
+| 14 | The formatter inserts a space after a block comment | Mid-line markers consume the whitespace *following* them, not the marker alone. Otherwise completion-mid-identifier cannot work. |
+| 15 | The formatter inserts blank lines between statement-fragment "members" | Line-structure reconciliation added to section 6. The whitespace-equivalence guard alone accepts this, because it is whitespace. |
+| 16 | A column-0 comment last in its body is not re-indented, and trailing whitespace is never stripped | Acceptance test 1's expected output was wrong in an earlier draft; it does not discriminate the two modes. Acceptance test 3 added for that. |
