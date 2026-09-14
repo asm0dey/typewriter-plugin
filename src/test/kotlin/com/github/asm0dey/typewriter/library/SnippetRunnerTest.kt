@@ -7,11 +7,11 @@ import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
 import com.github.asm0dey.typewriter.ui.TypeWriterSettings
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.testFramework.MapDataContext
 import com.intellij.testFramework.TestActionEvent
 import java.nio.file.Files
 import kotlinx.coroutines.runBlocking
@@ -133,10 +133,10 @@ class SnippetRunnerTest : TypeWriterFixtureTestCase() {
             val svc = fixture.project.getService(RunService::class.java)
             svc.cursor = 0
 
-            val dataContext = MapDataContext().apply {
-                put(CommonDataKeys.PROJECT, fixture.project)
-                put(CommonDataKeys.EDITOR, fixture.editor)
-            }
+            val dataContext = SimpleDataContext.builder()
+                .add(CommonDataKeys.PROJECT, fixture.project)
+                .add(CommonDataKeys.EDITOR, fixture.editor)
+                .build()
             val event = TestActionEvent.createTestEvent(dataContext)
             val action = TypeNextAction()
 
