@@ -4,6 +4,8 @@ import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.openapi.editor.RangeMarker
+import com.intellij.openapi.editor.event.CaretEvent
+import com.intellij.openapi.editor.event.CaretListener
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -119,6 +121,32 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         assertEquals("\nx", editor.document.text)
     }
 
+    // Pins the marker.endOffset choice (spec section 7, "Typed range": "The expected caret
+    // position after an `action` step is re-derived from the marker's end, not from the last
+    // insertion offset") against the brief's editor.caretModel.offset -- do not "fix" this back
+    // to the brief's version. The two only diverge when an action moves the caret away from the
+    // end of the typed range without changing the range itself: EditorLineStart does exactly
+    // that. After typing "abc" the marker ends at offset 3; EditorLineStart moves the caret to
+    // column 0 but leaves the marker where it was. With marker.endOffset as the source of truth,
+    // the following Type("x") sees the caret (0) diverge from the typed range's end (3) and
+    // aborts via onCaretDrift, leaving "abc" untouched. With caretModel.offset it would instead
+    // treat 0 as the new baseline, see no drift, and type "x" at the start -- "xabc". Verified by
+    // temporarily changing the production line to editor.caretModel.offset: this test then fails
+    // (see task-6-report.md, fix round 1).
+    @Test
+    fun testActionStepExpectedOffsetComesFromTheMarkerNotTheCaret() {
+        fixture.configureByText("P.java", "<caret>")
+        val editor = fixture.editor
+        val offset = editor.caretModel.offset
+        val marker = editor.document.createRangeMarker(offset, offset)
+        marker.isGreedyToRight = true
+        runBlocking {
+            Player(fixture.project, editor, marker, Any())
+                .play(listOf(Step.Type("abc"), Step.Action("EditorLineStart"), Step.Type("x")), instant)
+        }
+        assertEquals("abc", editor.document.text)
+    }
+
     // Regression test for the exact risk this task calls out: a suspend function that only
     // relies on delay() to observe cancellation is never cancellable when every Timing delay is
     // zero, because kotlinx.coroutines' delay(timeMillis) returns immediately without ever
@@ -158,5 +186,53 @@ class PlayerTest : TypeWriterFixtureTestCase() {
             run.join()
         }
         assertEquals("", editor.document.text)
+    }
+
+    // Cancels mid-run, not just at the start, and specifically exercises the in-loop
+    // ensureActive() (Player.kt, top of the per-code-point while loop) rather than the
+    // per-Step one at play()'s entry: the Job is still active when Step.Type("abcdef")
+    // begins, so that outer check passes, and cancellation only happens after two
+    // characters are already committed.
+    //
+    // The reentrant hook matters. A DocumentListener or a ScrollingModel
+    // VisibleAreaListener also fire synchronously from inside Player's call stack, but
+    // cancelling from either one lands inside CommandProcessor's own non-cancellable
+    // command-execution window and triggers the platform's own undo-the-whole-group
+    // recovery (observed directly: with such a listener, cancelling after "ab" is typed
+    // rolls the document back to "" -- both characters, not just the pending one -- and
+    // this happens identically whether or not ensureActive() is present, so neither of
+    // those hooks can tell the two implementations apart). A CaretListener does not: its
+    // callback runs outside that window, so cancelling from it leaves already-committed
+    // characters alone and lets ensureActive() decide what happens next -- which is what
+    // this test needs.
+    @Test
+    fun testCancellationStopsTypingAfterTheSecondCharacterMidRun() {
+        fixture.configureByText("P.java", "<caret>")
+        val editor = fixture.editor
+        val document = editor.document
+        val offset = editor.caretModel.offset
+        val marker = document.createRangeMarker(offset, offset)
+        val player = Player(fixture.project, editor, marker, Any())
+        runBlocking {
+            lateinit var scope: CoroutineScope
+            scope = CoroutineScope(Job(currentCoroutineContext()[Job]))
+            val listener = object : CaretListener {
+                override fun caretPositionChanged(e: CaretEvent) {
+                    if (document.text == "ab") {
+                        scope.cancel()
+                    }
+                }
+            }
+            editor.caretModel.addCaretListener(listener)
+            try {
+                val run = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    player.play(listOf(Step.Type("abcdef")), instant)
+                }
+                run.join()
+            } finally {
+                editor.caretModel.removeCaretListener(listener)
+            }
+        }
+        assertEquals("ab", document.text)
     }
 }

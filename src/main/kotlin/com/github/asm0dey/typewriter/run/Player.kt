@@ -57,8 +57,16 @@ class Player(
                 is Step.Pause -> delay(step.millis.milliseconds)
                 is Step.Action -> {
                     runAction(step.actionId)
-                    // Any raw offset held before this step may now be stale (spec section 7,
-                    // "Typed range"); the marker is the one thing that survived the edit.
+                    // Deliberately marker.endOffset, not editor.caretModel.offset -- do not
+                    // "simplify" this back to the caret. Spec section 7, "Typed range": "The
+                    // expected caret position after an `action` step is re-derived from the
+                    // marker's end, not from the last insertion offset." They read the same for
+                    // an action that moves the caret to the end of what was typed (EditorEnter,
+                    // a completion insertion), but diverge for one that relocates the caret
+                    // without touching the typed range (EditorLineStart): caretModel.offset would
+                    // treat the caret's new position as the baseline and let the next Type step
+                    // continue from there; marker.endOffset instead reads that as drift and stops
+                    // the run. See PlayerTest.testActionStepExpectedOffsetComesFromTheMarkerNotTheCaret.
                     expectedOffset = marker.endOffset
                 }
                 is Step.Type -> {
