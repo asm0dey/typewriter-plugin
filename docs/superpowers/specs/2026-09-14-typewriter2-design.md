@@ -443,8 +443,9 @@ Any `action` step changes text length — reformat, optimize imports, a completi
 insertion — after which every raw offset the player holds is stale. The
 `RangeMarker` survives document edits.
 
-The expected caret position after an `action` step is re-derived from the
-marker's end, not from the last insertion offset.
+The expected caret position after an `action` step is re-derived from the live
+caret, not from the stale offset the player was holding. See question 19: the
+marker's end was the first answer and breaks completion.
 
 ### Abort
 
@@ -1044,3 +1045,4 @@ than reasoning about it (spike, 2026-09-14, IDEA 2025.3):
 | 16 | A column-0 comment last in its body is not re-indented, and trailing whitespace is never stripped | Acceptance test 1's expected output was wrong in an earlier draft; it does not discriminate the two modes. Acceptance test 3 added for that. |
 | 17 | Auto-close pairs and auto-indent settings have no effect on `Type` steps, on or off | Confirms the central premise of the verbatim-insertion design. Recorded in section 7 with the exact flags tested, so a future reader need not re-derive it. |
 | 18 | The first line needs `baseIndent` too, minus the caret's column | "The caret is already there" holds only when the caret sits at `baseIndent`. Clicking a blank line at column 0 inside a class body — the common gesture — otherwise leaves the first line at column 0. |
+| 19 | Expected caret after an `action` step | The live caret, not the marker's end. Rejected: the marker's end, which aborts the run whenever an action parks the caret anywhere but the range end — completion landing inside `foo(&#124;)` is the common case, and section 7 designs for it explicitly. Drift detection exists to catch *the user* moving the caret; the run's own action is already exempt under "Abort". The `RangeMarker` remains the typed range. |
