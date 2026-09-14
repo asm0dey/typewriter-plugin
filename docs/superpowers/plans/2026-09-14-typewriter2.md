@@ -22,6 +22,34 @@
 - **Never write to the keymap.** The IDE owns bindings. Registering an action is allowed; calling `keymap.addShortcut` is not.
 - **Golden files for formatter behavior are generated and reviewed, never predicted.** When a task says "capture the formatter's output", run it, read it, then commit it.
 
+### Test conventions
+
+These were settled during execution and **override the sample test code shown inside
+the task bodies below**, which was written before the migration. A task's test
+*cases, assertions and expected values* still bind; only the style below changes.
+
+- **JUnit 5, not JUnit 3/4.** Test classes extend `TypeWriterFixtureTestCase`
+  (`src/test/kotlin/com/github/asm0dey/typewriter/TypeWriterFixtureTestCase.kt`), which
+  carries `@RunInEdt(writeIntent = true)`, an empty `getRelativePath()` override and a
+  `ThreadLeakTracker` registration — all inherited, none to be copied into a subclass.
+  Use `@Test` and assertions from `org.junit.jupiter.api`, and reach the fixture via
+  `fixture`, never `myFixture`. A test needing no PSI fixture extends nothing.
+- **Language injection hints on code fixtures.** A string literal holding another
+  language's source carries `// language="JAVA"` (or the matching id) on the line
+  immediately above it; a fixture already bound to a `val` carries
+  `@org.intellij.lang.annotations.Language("JAVA")` on that `val` instead. Never hoist a
+  literal to a `val` merely to make the annotation attachable — the comment form covers it.
+- **Raw strings for multi-line fixtures.** `"""..."""` with `.trimMargin()` where leading
+  whitespace is load-bearing, `.trimIndent()` where it is incidental. An escaped `"\n"`
+  literal survives only where an assertion depends on TRAILING whitespace, since trailing
+  spaces are invisible in a raw string — and carries a comment saying why. When converting
+  a fixture, the text reaching the code under test must be byte-identical to what the
+  escaped literal produced.
+- **`RawMarker.body` is sentinel-inclusive** — comment delimiters stripped, the sentinel
+  retained on every body line. The design spec requires each non-blank body line to carry
+  the sentinel, and `MarkerParser` strips it per line. Stripping it in the scanner turns
+  every ordinary single-line marker into a pre-flight error.
+
 ---
 
 ## File Structure
@@ -192,10 +220,18 @@ Expected: PASS.
 
 If it fails with `NoSuchMethodError: SequencesKt.sequenceOf`, `gradle.properties` is missing or misspelled — that exact error means the project bundled its own Kotlin stdlib.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Generate the Gradle wrapper**
+
+Every later task verifies with `./gradlew`, so the wrapper must exist and be committed.
 
 ```bash
-git add settings.gradle.kts build.gradle.kts gradle.properties src
+gradle wrapper --gradle-version 9.3.0
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add settings.gradle.kts build.gradle.kts gradle.properties gradlew gradlew.bat gradle src
 git commit -m "build: scaffold plugin project with a running platform test"
 ```
 
@@ -234,7 +270,7 @@ class MarkerScannerTest : LightJavaCodeInsightFixtureTestCase() {
         val markers = scan("class A {\n// tw: pause 800\n    int x;\n}")
         assertEquals(1, markers.size)
         assertEquals(MarkerKind.WHOLE_LINE, markers[0].kind)
-        assertEquals("pause 800", markers[0].body.trim())
+        assertEquals("tw: pause 800", markers[0].body.trim())
     }
 
     fun testTrailingMarker() {
@@ -1835,6 +1871,7 @@ git commit -m "feat: gate every run behind pre-flight checks"
 **Files:**
 - Create: `src/main/kotlin/com/github/asm0dey/typewriter/run/RunService.kt`
 - Create: `src/main/kotlin/com/github/asm0dey/typewriter/run/AbortWatcher.kt`
+- Modify: `src/main/resources/META-INF/plugin.xml` — register `RunService`
 - Test: `src/test/kotlin/com/github/asm0dey/typewriter/run/RunServiceTest.kt`
 
 **Interfaces:**
@@ -2072,6 +2109,7 @@ git commit -m "feat: run service with action-level abort and undo-run recovery"
   - `object SnippetRegistrar { fun sync(); fun registeredIds(): Set<String> }`
   - `class TypeNextAction : AnAction`, `class TypePreviousAction : AnAction`, `class UndoRunAction : AnAction`
   - `object SnippetRunner { fun run(project: Project, editor: Editor?, snippet: Snippet) }`
+  - `object SnippetDirs { fun global(): VirtualFile?; fun project(project: Project): VirtualFile?; fun all(project: Project): List<Snippet> }` — consumed by Tasks 13, 14 and 17
 
 `SnippetRegistrar.sync()` registers one action per known relative path and
 unregisters ones whose files are gone. It **never touches the keymap** — the IDE
@@ -2767,6 +2805,7 @@ git commit -m "feat: complete command names and action ids inside markers"
 
 **Files:**
 - Create: `src/main/kotlin/com/github/asm0dey/typewriter/ui/NewSnippetDialog.kt`
+- Modify: `src/main/resources/META-INF/plugin.xml` — register the new-snippet action
 - Test: `src/test/kotlin/com/github/asm0dey/typewriter/ui/SnippetFileNameTest.kt`
 
 **Interfaces:**
@@ -3480,7 +3519,7 @@ git commit -m "test: golden acceptance suite across Java, Dockerfile and CRLF"
 
 **Files:**
 - Create: `src/main/kotlin/com/github/asm0dey/typewriter/ui/TypeWriterConfigurable.kt`
-- Create: `README.md`, `CHANGELOG.md`
+- Create: `README.md`; rewrite `CHANGELOG.md` — a placeholder was added in Task 1, because the `org.jetbrains.changelog` plugin auto-wires `changeNotes` from it and the build fails configuration-cache serialization without one
 - Modify: `src/main/resources/META-INF/plugin.xml`
 
 **Interfaces:**
