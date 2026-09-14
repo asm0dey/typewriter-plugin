@@ -3,4 +3,18 @@
     <name>TypeWriter</name>
     <vendor>asm0dey</vendor>
     <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="TypeWriter" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="typewriter.snippets" text="TypeWriter" popup="true"/>
+        <action id="typewriter.typeNext" class="com.github.asm0dey.typewriter.library.TypeNextAction"
+                text="TypeWriter: Type Next"/>
+        <action id="typewriter.typePrevious" class="com.github.asm0dey.typewriter.library.TypePreviousAction"
+                text="TypeWriter: Type Previous"/>
+        <action id="typewriter.undoRun" class="com.github.asm0dey.typewriter.library.UndoRunAction"
+                text="TypeWriter: Undo Run"/>
+    </actions>
 </idea-plugin>
