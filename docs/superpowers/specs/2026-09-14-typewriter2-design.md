@@ -24,9 +24,18 @@ v1, not incidental:
   yields a single element, and is destructured into two — an
   `IndexOutOfBoundsException` before a character is typed. The documented
   `<reformat>` command fails the same way, so it has never worked.
-- **Hotkeys do not survive IDE restart.** Snippet actions are registered only
-  inside `TypeWriterAction.actionPerformed`. Nothing re-registers them at
-  startup, so keymap entries resolve to nothing after a restart.
+- **The plugin owns keymap bindings instead of the IDE.**
+  `SnippetShortcutRegistrar` (a `ProjectActivity`) re-registers actions on every
+  project open and calls `keymap.addShortcut` itself, so the plugin writes into
+  the user's keymap rather than letting the IDE own it. Three consequences: the
+  action id is derived from the shortcut string
+  (`...DirectSnippetExecution.${snippet.shortcut}`), so **changing a snippet's
+  shortcut changes its action id** and orphans whatever the user bound in
+  Settings > Keymap; a user's manual rebinding is fought by the plugin's own
+  re-add on the next open; and failures are swallowed to `println`. An earlier
+  draft of this spec claimed bindings simply did not survive restart — that was
+  wrong, and the real defect is worse, because the plugin and the IDE both
+  believe they own the binding.
 - **Snippet authoring is a `JTextArea`.** No monospace font, no syntax
   highlighting, no formatting.
 
@@ -962,7 +971,8 @@ recreated as files.
 
 ## 15. Risks
 
-- ~~**Keymap resolution order.**~~ **Resolved.** `KeymapImpl.writeOwnActionIds`
+- ~~**Keymap resolution order.**~~ **Resolved.** Bindings are the IDE's to keep:
+  `KeymapImpl.writeOwnActionIds`
   serialises every id in `actionIdToShortcuts` with no check against
   `ActionManager`, and `writeScheme` returns the stored element verbatim when
   untouched. Bindings for unregistered actions persist across save and reload, so
