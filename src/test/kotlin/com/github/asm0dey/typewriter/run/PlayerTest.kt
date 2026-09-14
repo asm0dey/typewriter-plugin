@@ -6,6 +6,8 @@ import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
+import com.intellij.openapi.editor.event.VisibleAreaEvent
+import com.intellij.openapi.editor.event.VisibleAreaListener
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -14,6 +16,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.junit.jupiter.api.Assertions.assertDoesNotThrow
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
@@ -303,5 +306,62 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         val offset = editor.caretModel.offset
         val marker = editor.document.createRangeMarker(offset, offset)
         return Player(fixture.project, editor, marker, Any())
+    }
+
+    // Drift is the mouse-click case (spec section 7, "Abort", third bullet): the caret ends up
+    // somewhere the run did not put it. Now that the action-step offset is the live caret (fix
+    // round 3), nothing in Player ever moves the caret to a position other than exactly where it
+    // expects -- so the only way left to exercise this branch is to move the caret from outside
+    // the player entirely, simulating the user.
+    //
+    // The hook has to be one whose callback runs genuinely outside Player's own write command,
+    // not merely "a different listener type" -- two more direct candidates were considered and
+    // rejected:
+    //   - A DocumentListener fires *inside* insertString's own listener-notification phase,
+    //     which is itself inside insert()'s write action. Player's insert() calls
+    //     caretModel.moveToOffset(...) right after insertString, as part of that SAME write
+    //     action -- so any caret move injected from a DocumentListener would be immediately
+    //     overwritten by Player's own subsequent move before insert() even returns.
+    //   - A CaretListener fires synchronously as part of every moveToOffset call, including
+    //     insert()'s own. An injected move from inside that callback would be the last write to
+    //     the caret before insert() returns, and Player's very next line
+    //     (expectedOffset = editor.caretModel.offset) would adopt that injected position as the
+    //     new "correct" baseline -- masking the drift instead of exercising it (the same trap
+    //     encountered writing the mid-run cancellation test's DocumentListener attempt, but for
+    //     caret state instead of Job state).
+    // A ScrollingModel.VisibleAreaListener does not have either problem: Player calls
+    // scrollToCaret(...) as its own separate statement, strictly after insert() has already
+    // returned and expectedOffset has already been captured from the just-typed position. A move
+    // injected from that callback lands after the correct baseline was recorded, so the next
+    // iteration's drift check (editor.caretModel.offset != expectedOffset) sees exactly the
+    // mismatch a real mouse click would produce.
+    @Test
+    fun testUserMovingTheCaretMidRunAbortsTheRunWithoutThrowing() {
+        fixture.configureByText("P.java", "<caret>")
+        val editor = fixture.editor
+        val document = editor.document
+        val offset = editor.caretModel.offset
+        val marker = document.createRangeMarker(offset, offset)
+        val player = Player(fixture.project, editor, marker, Any())
+        var drifted = false
+        val listener = object : VisibleAreaListener {
+            override fun visibleAreaChanged(e: VisibleAreaEvent) {
+                if (document.text == "a") {
+                    editor.caretModel.moveToOffset(0)
+                }
+            }
+        }
+        editor.scrollingModel.addVisibleAreaListener(listener)
+        try {
+            assertDoesNotThrow {
+                runBlocking {
+                    player.play(listOf(Step.Type("abcdef")), instant) { drifted = true }
+                }
+            }
+        } finally {
+            editor.scrollingModel.removeVisibleAreaListener(listener)
+        }
+        assertEquals("a", document.text)
+        assertTrue(drifted)
     }
 }
