@@ -535,9 +535,9 @@ so a single binding drives the corresponding snippet in every demo project. Same
 relative path means same id means one winner, resolved by shadowing — there is no
 collision to arbitrate.
 
-Actions are registered in an `ApplicationInitializedListener`, early enough to
-precede keymap resolution, and added to a declared group so they cluster in the
-keymap tree:
+Actions are registered in a `ProjectActivity` on project open, and added to a
+declared group so they cluster in the keymap tree. An earlier draft said
+`ApplicationInitializedListener`; see question 21 for why that cannot work:
 
 ```xml
 <group id="typewriter.snippets" text="TypeWriter" popup="true"/>
@@ -1050,3 +1050,4 @@ than reasoning about it (spike, 2026-09-14, IDEA 2025.3):
 | 18 | The first line needs `baseIndent` too, minus the caret's column | "The caret is already there" holds only when the caret sits at `baseIndent`. Clicking a blank line at column 0 inside a class body — the common gesture — otherwise leaves the first line at column 0. |
 | 19 | Expected caret after an `action` step | The live caret, not the marker's end. Rejected: the marker's end, which aborts the run whenever an action parks the caret anywhere but the range end — completion landing inside `foo(&#124;)` is the common case, and section 7 designs for it explicitly. Drift detection exists to catch *the user* moving the caret; the run's own action is already exempt under "Abort". The `RangeMarker` remains the typed range. |
 | 20 | Cursor at either end of the sequence | Clamp. Rejected: wrap, which silently restarts the demo from step 1 in front of an audience — the same surprise section 8 refuses when it declines to persist the cursor; and error, which is worse still. Clamping means nothing happens, which the speaker notices immediately and can recover from. |
+| 21 | Where snippet actions are registered | A `ProjectActivity` on project open, re-run by a scoped `BulkFileListener`. Rejected: `ApplicationInitializedListener`, which fires before any project is open and so structurally cannot read a project's snippet directory — project snippets would never register at all. The "precede keymap resolution" concern it was chosen for does not bite: a keymap stores bindings by action id, so a binding for an id registered slightly later still resolves when the key is next pressed. |
