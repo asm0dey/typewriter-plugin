@@ -107,9 +107,15 @@ class RunService(private val project: Project, private val scope: CoroutineScope
                 val watcherScope = Disposer.newDisposable("TypeWriter run $runId")
                 AbortWatcher(player) { cancel() }.install(watcherScope)
                 try {
-                    player.play(steps, effectiveTiming(timing))
+                    player.play(steps, timing)
                 } finally {
                     Disposer.dispose(watcherScope)
+                    // The previous run's marker (if any) is about to be unreachable from
+                    // `lastRun` -- dispose it explicitly rather than leaving it registered in the
+                    // document's marker tree to be updated on every future edit until GC gets to
+                    // it. A talk-length session starts many runs; each one's marker otherwise
+                    // leaks until the whole session ends.
+                    lastRun?.marker?.dispose()
                     lastRun = LastRun(editor, marker, editor.document.modificationStamp)
                 }
             }
@@ -146,27 +152,6 @@ class RunService(private val project: Project, private val scope: CoroutineScope
     }
 
     /**
-     * `delay(0)` never suspends -- kotlinx.coroutines returns immediately for a non-positive
-     * delay without ever reaching a real suspension point -- so an all-zero [Timing] would make
-     * [Player.play] run its whole per-character loop synchronously in one burst on the EDT, with
-     * no point at which a cancellation requested by [AbortWatcher] (itself only ever dispatched
-     * through that same single-threaded EDT event queue) could ever be delivered: the run and the
-     * abort can never interleave. `ensureActive()` in that case can only observe a cancellation
-     * something else already completed, never request one during the run.
-     *
-     * Flooring `speedMs` to 1 only in the exact all-zero case keeps an "as fast as possible" run
-     * abortable -- one millisecond per character is not perceptible -- without changing the pacing
-     * of every other configured speed, where at least one of the three knobs already makes most
-     * per-character delays positive.
-     */
-    private fun effectiveTiming(timing: Timing): Timing =
-        if (timing.speedMs <= 0 && timing.jitterMs <= 0 && timing.newlineMs <= 0) {
-            timing.copy(speedMs = 1)
-        } else {
-            timing
-        }
-
-    /**
      * `Undo Run` is enabled only while the document's modification stamp is unchanged since the
      * run ended (spec section 7, "Recovery") -- otherwise it would delete whatever now occupies
      * those offsets -- and only while the marker itself is still valid: an `action` step (e.g. a
@@ -193,6 +178,7 @@ class RunService(private val project: Project, private val scope: CoroutineScope
         WriteCommandAction.runWriteCommandAction(project, "TypeWriter: Undo Run", null, {
             run.editor.document.deleteString(run.marker.startOffset, run.marker.endOffset)
         })
+        run.marker.dispose()
         lastRun = null
         return true
     }

@@ -127,10 +127,23 @@ class Player(
         }
     }
 
+    // Floored at 1ms, not 0: `delay(0)` never suspends (kotlinx.coroutines returns immediately
+    // for a non-positive delay without ever reaching a real suspension point -- see
+    // RunServiceTest's testANewlineOnlyTimingRunIsStillAbortableMidRun), so any chunk that
+    // computes a non-positive total would make Player run straight through it with no point at
+    // which a cancellation requested by AbortWatcher (itself only ever delivered through the same
+    // single-threaded EDT event queue Player runs on) could ever be *processed* -- not merely
+    // "not yet observed": the real delivery mechanism (a keypress reaching beforeActionPerformed/
+    // beforeEditorTyping) is itself an event on that same queue, so it cannot even be dequeued
+    // while this loop occupies the thread without yielding. This is not just the all-zero
+    // Timing(0,0,0) case: Timing(0, 0, newlineMs) computes delay(0) for every non-newline
+    // character (newlineMs is only added for a "\n" chunk), and symmetric jitter can zero out an
+    // otherwise-positive base for any single character. One millisecond is imperceptible for
+    // pacing but guarantees delay() actually suspends.
     internal fun delayFor(chunk: String, timing: Timing): Duration {
         val base = timing.speedMs.milliseconds + if (chunk == "\n") timing.newlineMs.milliseconds else Duration.ZERO
         val jitter = if (timing.jitterMs > 0) Random.nextInt(-timing.jitterMs, timing.jitterMs + 1).milliseconds else Duration.ZERO
         val total = base + jitter
-        return if (total < Duration.ZERO) Duration.ZERO else total
+        return if (total < 1.milliseconds) 1.milliseconds else total
     }
 }

@@ -3,11 +3,16 @@ package com.github.asm0dey.typewriter.run
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.model.Timing
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.ex.AnActionListener
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.testFramework.TestActionEvent
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -159,5 +164,126 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
         var result = true
         onEdt { WriteAction.run<Exception> { result = svc.undoLastRun() } }
         assertFalse(result)
+    }
+
+    // Fix round: Player.delayFor's clamp used to floor at Duration.ZERO, not 1ms. That floor is
+    // not just an all-zero-Timing problem: delayFor only adds newlineMs for a "\n" chunk, so
+    // Timing(0, 0, 300) still computes delay(0) for every *non-newline* character -- a snippet
+    // author reaches this by setting `tw: speed 0` / `tw: jitter 0` and inheriting the default
+    // newlineMs. Before the fix, this whole run typed as one synchronous EDT burst with no point
+    // at which the published abort event could land mid-run; this test fails if that floor is
+    // reverted to Duration.ZERO (verified directly -- see task-11-report.md's fix-round section
+    // for the quoted failure).
+    @Test
+    fun testANewlineOnlyTimingRunIsStillAbortableMidRun() {
+        configure("<caret>")
+        val svc = service()
+        val editor = fixture.editor
+        val document = editor.document
+        val text = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        runBlocking {
+            val job = launch { svc.run(editor, listOf(Step.Type(text)), Timing(0, 0, 300)) }
+            while (document.text.isEmpty()) yield()
+            // Delivered through the EDT's own event queue via invokeLater, not by calling the
+            // listener directly from this background thread. This is what makes the test
+            // discriminating rather than a coincidence of OS thread scheduling: a direct
+            // cross-thread syncPublisher call reaches AbortWatcher regardless of whether Player's
+            // loop ever yields, because Job.cancel() and ensureActive() are thread-safe on their
+            // own -- so a direct call landed even with delayFor's floor reverted to Duration.ZERO
+            // in manual testing (see task-11-report.md's fix-round section). A REAL Escape/arrow
+            // keypress reaches AbortWatcher only via the actual action-dispatch machinery, which
+            // runs on the EDT and therefore cannot be *processed* -- not merely "not yet
+            // observed" -- while that same thread is busy running Player's loop synchronously.
+            // invokeLater reproduces that: it queues onto the same EDT `withContext(Dispatchers.
+            // EDT)` uses, so it can only run between two dispatcher turns, i.e. only if Player's
+            // loop actually suspends somewhere.
+            ApplicationManager.getApplication().invokeLater(
+                {
+                    ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
+                        .beforeEditorTyping('z', DataContext.EMPTY_CONTEXT)
+                },
+                ModalityState.any(),
+            )
+            job.join()
+        }
+        assertFalse(svc.isRunning())
+        assertTrue(document.text.isNotEmpty(), "at least one character should have been typed before the abort")
+        assertTrue(
+            document.text.length < text.length,
+            "the run should have stopped before typing everything: ${document.text}",
+        )
+    }
+
+    // AbortWatcher's invokingAction exemption, exercised through the real wiring RunService
+    // installs -- not by inspecting AbortWatcher in isolation. Without the exemption, Step.Action
+    // running "EditorEnter" publishes beforeActionPerformed on the same bus this run's own
+    // watcher is subscribed to, and the run would cancel itself before typing "b" (verified
+    // directly by deleting the exemption -- see task-11-report.md's fix-round section).
+    @Test
+    fun testTheRunsOwnActionStepDoesNotAbortItself() {
+        configure("<caret>")
+        val svc = service()
+        runBlocking {
+            svc.run(fixture.editor, listOf(Step.Type("a"), Step.Action("EditorEnter"), Step.Type("b")), Timing(0, 0, 0))
+        }
+        assertEquals("a\nb", fixture.editor.document.text)
+    }
+
+    // The beforeActionPerformed abort path -- the hook Escape and the arrow keys actually arrive
+    // on -- had no test at all before this fix round. Publishes a real AnActionListener.TOPIC
+    // beforeActionPerformed event, for an action with no registered id (so AbortWatcher's
+    // "typewriter." prefix exemption cannot apply and player.invokingAction is false), mid-run.
+    @Test
+    fun testAnIdeActionAbortsARunInProgress() {
+        configure("<caret>")
+        val svc = service()
+        val editor = fixture.editor
+        val document = editor.document
+        val text = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        val action = object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) = Unit
+        }
+        runBlocking {
+            val job = launch { svc.run(editor, listOf(Step.Type(text)), Timing(1, 0, 0)) }
+            while (document.text.isEmpty()) yield()
+            ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
+                .beforeActionPerformed(action, TestActionEvent.createTestEvent(action))
+            job.join()
+        }
+        assertFalse(svc.isRunning())
+        assertTrue(document.text.isNotEmpty(), "at least one character should have been typed before the abort")
+        assertTrue(
+            document.text.length < text.length,
+            "the run should have stopped before typing everything: ${document.text}",
+        )
+    }
+
+    // The "typewriter." id-prefix exemption: an action registered under that prefix (matching
+    // the plugin's own commands, e.g. per-snippet play actions and TypeWriter: Undo Run) must
+    // NOT abort a run in progress when it fires mid-run.
+    @Test
+    fun testATypewriterPrefixedActionDoesNotAbortARunInProgress() {
+        configure("<caret>")
+        val svc = service()
+        val editor = fixture.editor
+        val document = editor.document
+        val actionId = "typewriter.test.harmless"
+        val action = object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) = Unit
+        }
+        ActionManager.getInstance().registerAction(actionId, action)
+        try {
+            runBlocking {
+                val job = launch { svc.run(editor, listOf(Step.Type("abcdefghij")), Timing(1, 0, 0)) }
+                while (document.text.isEmpty()) yield()
+                ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
+                    .beforeActionPerformed(action, TestActionEvent.createTestEvent(action))
+                job.join()
+            }
+        } finally {
+            ActionManager.getInstance().unregisterAction(actionId)
+        }
+        assertEquals("abcdefghij", document.text)
+        assertFalse(svc.isRunning())
     }
 }

@@ -238,17 +238,35 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         val player = Player(fixture.project, editor, Any())
         var thrown: Throwable? = null
         runBlocking {
-            val scope = CoroutineScope(Job(currentCoroutineContext()[Job]))
+            // A child Job of this runBlocking's own scope, not a standalone CoroutineScope with
+            // its own Job as the sibling test above uses. Fix round (see task-11-report.md):
+            // delayFor's clamp now floors at 1ms rather than Duration.ZERO, so this test's
+            // per-character delay(1ms) genuinely suspends. A standalone scope has no
+            // ContinuationInterceptor of its own, so kotlinx.coroutines schedules that suspension
+            // through its global DefaultExecutor -- a real background thread -- and adding
+            // Dispatchers.EDT to that scope does not fix it either: this whole test method
+            // already runs ON the physical EDT thread (@RunInEdt), parked inside runBlocking's own
+            // blocking wait, which does not pump the IDE event queue -- so nothing dispatched
+            // through the real EDT (nor anything requiring it, like Player.insert()'s write
+            // action) can ever run until runBlocking itself returns, deadlocking either way
+            // (confirmed directly: this hung for 100+ seconds in manual testing with an explicit
+            // Dispatchers.EDT scope; ~exactly the shape of RunServiceTest's original deadlock).
+            // Launching as a child of runBlocking's own scope keeps delay() scheduling inside
+            // runBlocking's own cooperative single-thread event loop -- no cross-thread or
+            // cross-queue hop at all -- while `.cancel()` on the returned child Job still only
+            // cancels this one coroutine, not the whole runBlocking, exactly like the standalone
+            // scope did.
+            lateinit var run: Job
             val listener = object : CaretListener {
                 override fun caretPositionChanged(e: CaretEvent) {
                     if (document.text == "ab") {
-                        scope.cancel()
+                        run.cancel()
                     }
                 }
             }
             editor.caretModel.addCaretListener(listener)
             try {
-                val run = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                run = launch(start = CoroutineStart.UNDISPATCHED) {
                     thrown = runCatching { player.play(listOf(Step.Type("abcdef")), instant) }.exceptionOrNull()
                 }
                 run.join()
