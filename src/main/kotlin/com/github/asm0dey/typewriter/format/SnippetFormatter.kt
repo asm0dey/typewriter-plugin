@@ -34,7 +34,7 @@ object SnippetFormatter {
         return psi.text
     }
 
-    private fun sameNonWhitespace(a: String, b: String) =
+    internal fun sameNonWhitespace(a: String, b: String) =
         a.filterNot { it.isWhitespace() } == b.filterNot { it.isWhitespace() }
 
     /**
@@ -43,7 +43,7 @@ object SnippetFormatter {
      * so non-blank lines correspond one to one. Null when they do not — line wrapping
      * split something.
      */
-    private fun reconcileLines(original: String, formatted: String): String? {
+    internal fun reconcileLines(original: String, formatted: String): String? {
         val formattedNonBlank = formatted.lines().filter { it.isNotBlank() }
         val originalNonBlank = original.lines().filter { it.isNotBlank() }
         if (formattedNonBlank.size != originalNonBlank.size) return null

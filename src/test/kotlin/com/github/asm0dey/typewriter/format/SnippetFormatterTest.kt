@@ -5,6 +5,7 @@ import com.intellij.ide.highlighter.JavaFileType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class SnippetFormatterTest : TypeWriterFixtureTestCase() {
@@ -105,5 +106,48 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
             src.filterNot { it.isWhitespace() },
             out.text.filterNot { it.isWhitespace() },
         )
+    }
+
+    // --- sameNonWhitespace: the guard is the safety property this task exists for, so it is
+    // tested directly rather than only indirectly through end-to-end formatter runs. ---
+
+    @Test
+    fun testSameNonWhitespaceIgnoresWhitespaceOnlyDifferences() {
+        assertTrue(SnippetFormatter.sameNonWhitespace("class A {\n    int x;\n}", "class A {\nint x;\n}"))
+    }
+
+    @Test
+    fun testSameNonWhitespaceDetectsAnAddedLine() {
+        val a = "class A {\n    int x;\n}"
+        val b = "import java.util.List;\nclass A {\n    int x;\n}"
+        assertFalse(SnippetFormatter.sameNonWhitespace(a, b))
+    }
+
+    @Test
+    fun testSameNonWhitespaceDetectsARenamedIdentifier() {
+        assertFalse(SnippetFormatter.sameNonWhitespace("int x = 1;", "int y = 1;"))
+    }
+
+    // --- reconcileLines, tested directly against the doc comment's stated contract. ---
+
+    @Test
+    fun testReconcileLinesTakesFormattedIndentationOntoOriginalStructure() {
+        val original = "class A {\nint x;\n}"
+        val formatted = "class A {\n    int x;\n}"
+        assertEquals("class A {\n    int x;\n}", SnippetFormatter.reconcileLines(original, formatted))
+    }
+
+    @Test
+    fun testReconcileLinesKeepsOriginalBlankLinesEvenWhenFormattedHasNone() {
+        val original = "a\n\nb"
+        val formatted = "a\nb"
+        assertEquals("a\n\nb", SnippetFormatter.reconcileLines(original, formatted))
+    }
+
+    @Test
+    fun testReconcileLinesReturnsNullWhenNonBlankLineCountDiffers() {
+        val original = "a\nb"
+        val formatted = "ab\ncd\nef"
+        assertNull(SnippetFormatter.reconcileLines(original, formatted))
     }
 }
