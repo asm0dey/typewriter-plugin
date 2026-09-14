@@ -3,10 +3,12 @@ package com.github.asm0dey.typewriter.parse
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Program
 import com.github.asm0dey.typewriter.model.Step
+import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+@RunInEdt(writeIntent = true)
 class MarkerParserTest : TypeWriterFixtureTestCase() {
 
     private fun parse(text: String): Program {

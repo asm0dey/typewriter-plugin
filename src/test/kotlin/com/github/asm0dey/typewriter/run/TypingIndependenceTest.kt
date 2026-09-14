@@ -4,6 +4,7 @@ import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.codeInsight.CodeInsightSettings
+import com.intellij.testFramework.junit5.RunInEdt
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test
  * no effect on a `Type` step's output, on or off. Spec section 16 row 17 records this as measured
  * (not assumed) behaviour on Java 2025.3; this class makes that measurement a standing assertion.
  */
+@RunInEdt(writeIntent = true)
 class TypingIndependenceTest : TypeWriterFixtureTestCase() {
 
     // Trailing "\n" is load-bearing: the fixture ends with a newline after the unclosed method

@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.format
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.testFramework.junit5.RunInEdt
 import org.intellij.lang.annotations.Language
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+@RunInEdt(writeIntent = true)
 class SnippetFormatterTest : TypeWriterFixtureTestCase() {
 
     private fun format(text: String) =

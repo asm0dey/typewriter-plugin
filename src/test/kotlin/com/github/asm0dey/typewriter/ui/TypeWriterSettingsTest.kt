@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.ui
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Test
 // Resolves both services through the real platform service registry (ApplicationManager /
 // Project.getService), which is why this needs the fixture's live IDE application and project
 // rather than plain construction — that's the whole point of testDefaults()'s sibling tests below.
+@RunInEdt(writeIntent = true)
 class TypeWriterSettingsTest : TypeWriterFixtureTestCase() {
 
     @Test

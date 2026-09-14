@@ -6,6 +6,9 @@ import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.VisibleAreaListener
+import com.intellij.testFramework.junit5.RunInEdt
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -20,9 +23,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 
+@RunInEdt(writeIntent = true)
 class PlayerTest : TypeWriterFixtureTestCase() {
 
     private val instant = Timing(0, 0, 0)

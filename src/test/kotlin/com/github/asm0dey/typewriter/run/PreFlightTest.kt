@@ -11,10 +11,12 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+@RunInEdt(writeIntent = true)
 class PreFlightTest : TypeWriterFixtureTestCase() {
 
     private fun snippet(name: String = "01.java"): Snippet {

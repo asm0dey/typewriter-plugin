@@ -1,10 +1,12 @@
 package com.github.asm0dey.typewriter.run
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
+import com.intellij.testFramework.junit5.RunInEdt
 import org.intellij.lang.annotations.Language
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
+@RunInEdt(writeIntent = true)
 class BaseIndentTest : TypeWriterFixtureTestCase() {
 
     private fun indentAndColumn(host: String, fileName: String = "H.java"): Pair<String, Int> {

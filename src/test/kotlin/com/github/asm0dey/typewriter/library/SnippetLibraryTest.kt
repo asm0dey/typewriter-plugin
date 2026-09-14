@@ -4,10 +4,12 @@ import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
+@RunInEdt(writeIntent = true)
 class SnippetLibraryTest : TypeWriterFixtureTestCase() {
 
     private fun dir(name: String): VirtualFile = WriteAction.compute<VirtualFile, Exception> {

@@ -1,8 +1,10 @@
 package com.github.asm0dey.typewriter
 
+import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
+@RunInEdt(writeIntent = true)
 class ScaffoldTest : TypeWriterFixtureTestCase() {
     @Test
     fun testFixtureStarts() {
