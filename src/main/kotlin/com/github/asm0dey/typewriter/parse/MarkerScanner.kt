@@ -30,7 +30,7 @@ object MarkerScanner {
                 RawMarker(
                     startOffset = start,
                     endOffset = end,
-                    body = trimmed.removePrefix(sentinel),
+                    body = syntax.bodyOf(comment.text),
                     kind = classify(text, start, end),
                     line = text.take(start).count { it == '\n' } + 1,
                 )
