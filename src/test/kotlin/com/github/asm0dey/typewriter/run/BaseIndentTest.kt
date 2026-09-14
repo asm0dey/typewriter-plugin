@@ -6,8 +6,8 @@ import org.junit.jupiter.api.Test
 
 class BaseIndentTest : TypeWriterFixtureTestCase() {
 
-    private fun indentAndColumn(host: String): Pair<String, Int> {
-        val file = fixture.configureByText("H.java", host)
+    private fun indentAndColumn(host: String, fileName: String = "H.java"): Pair<String, Int> {
+        val file = fixture.configureByText(fileName, host)
         val editor = fixture.editor
         val offset = editor.caretModel.offset
         return BaseIndent.compute(fixture.project, file, editor.document, offset) to
@@ -111,6 +111,16 @@ class BaseIndentTest : TypeWriterFixtureTestCase() {
             """.trimMargin(),
             out,
         )
+    }
+
+    // Plain text has no formatter, so getLineIndent returns null (spec section 7); compute
+    // must fall back to the caret's own column rather than asking the IDE for a nonexistent
+    // notion of "what indentation this context calls for".
+    @Test
+    fun testNullLineIndentFallsBackToTheCaretColumn() {
+        val (indent, column) = indentAndColumn("if (true) {\n  <caret>\n}", "H.txt")
+        assertEquals(2, indent.length)
+        assertEquals(2, column)
     }
 
     @Test
