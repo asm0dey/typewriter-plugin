@@ -15,7 +15,7 @@ object SnippetFormatter {
             reformat(project, fileType, name, text)
         } catch (e: Exception) {
             return FormatResult(text, "formatting failed (${e.javaClass.simpleName}); typed as authored")
-        } ?: return FormatResult(text, "no formatter for ${fileType.name}; typed as authored")
+        }
 
         if (!sameNonWhitespace(text, formatted)) {
             return FormatResult(text, "the formatter changed more than whitespace; typed as authored")
@@ -25,9 +25,15 @@ object SnippetFormatter {
             ?: FormatResult(text, "the formatter changed the line structure; typed as authored")
     }
 
-    private fun reformat(project: Project, fileType: FileType, name: String, text: String): String? {
+    /**
+     * `createFileFromText` is declared `@NotNull` and falls back to a plain-text PSI file when no
+     * ParserDefinition matches, so there is no "this file type has no formatter" case to handle here.
+     * Were a future platform version to return null anyway, the resulting NPE is an Exception and
+     * [format]'s catch already degrades to typing the snippet as authored.
+     */
+    private fun reformat(project: Project, fileType: FileType, name: String, text: String): String {
         val psi = PsiFileFactory.getInstance(project)
-            .createFileFromText(name, fileType, text, 0L, true) ?: return null
+            .createFileFromText(name, fileType, text, 0L, true)
         WriteCommandAction.runWriteCommandAction(project) {
             CodeStyleManager.getInstance(project).reformatText(psi, 0, psi.textLength)
         }
