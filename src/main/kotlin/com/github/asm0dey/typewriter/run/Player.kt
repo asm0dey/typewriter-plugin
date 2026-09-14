@@ -125,7 +125,7 @@ class Player(
         }
     }
 
-    private fun delayFor(chunk: String, timing: Timing): Duration {
+    internal fun delayFor(chunk: String, timing: Timing): Duration {
         val base = timing.speedMs.milliseconds + if (chunk == "\n") timing.newlineMs.milliseconds else Duration.ZERO
         val jitter = if (timing.jitterMs > 0) Random.nextInt(-timing.jitterMs, timing.jitterMs + 1).milliseconds else Duration.ZERO
         val total = base + jitter

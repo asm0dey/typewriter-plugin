@@ -6,6 +6,7 @@ import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.editor.event.CaretEvent
 import com.intellij.openapi.editor.event.CaretListener
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -14,7 +15,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 
 class PlayerTest : TypeWriterFixtureTestCase() {
 
@@ -133,6 +138,12 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     // treat 0 as the new baseline, see no drift, and type "x" at the start -- "xabc". Verified by
     // temporarily changing the production line to editor.caretModel.offset: this test then fails
     // (see task-6-report.md, fix round 1).
+    //
+    // Also asserts onCaretDrift() itself fires -- Task 11's only hook for telling the speaker a
+    // run was aborted (spec section 7, "Abort") -- rather than only inferring it from the
+    // document staying "abc". Every other test in this class passes the default no-op lambda, so
+    // without this assertion nothing in the suite notices if the onCaretDrift() call is deleted
+    // and the bare `return` is kept (verified: fix round 2, task-6-report.md).
     @Test
     fun testActionStepExpectedOffsetComesFromTheMarkerNotTheCaret() {
         fixture.configureByText("P.java", "<caret>")
@@ -140,11 +151,15 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         val offset = editor.caretModel.offset
         val marker = editor.document.createRangeMarker(offset, offset)
         marker.isGreedyToRight = true
+        var drifted = false
         runBlocking {
             Player(fixture.project, editor, marker, Any())
-                .play(listOf(Step.Type("abc"), Step.Action("EditorLineStart"), Step.Type("x")), instant)
+                .play(listOf(Step.Type("abc"), Step.Action("EditorLineStart"), Step.Type("x")), instant) {
+                    drifted = true
+                }
         }
         assertEquals("abc", editor.document.text)
+        assertTrue(drifted)
     }
 
     // Regression test for the exact risk this task calls out: a suspend function that only
@@ -161,11 +176,11 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     // an instant Timing there is no other suspension point that could have caught this. Verified
     // by temporarily deleting both ensureActive() calls from Player.play(): this test then fails
     // with document text "a" instead of "" -- one character leaks through before something else
-    // (most likely EdtInterceptorExtension's own coroutine-context propagation into the write
-    // action, visible in the failure's stack trace) incidentally stops the second one. That
-    // incidental stop is test-harness behaviour this plugin does not control and cannot rely on
-    // in production; ensureActive() is what makes "zero characters typed" a guarantee instead of
-    // a coincidence.
+    // incidentally stops the second one. That something is not traced: ChildContext.runInChildContext
+    // and NestedLocksThreadingSupport appear in the failure's stack trace, but what they do and
+    // why cancelling this Job affects them is not established here. That incidental stop is
+    // test-harness behaviour this plugin does not control and cannot rely on in production;
+    // ensureActive() is what makes "zero characters typed" a guarantee instead of a coincidence.
     @Test
     fun testCancellationStopsTypingBeforeTheFirstCharacterWhenTheJobIsAlreadyCancelled() {
         fixture.configureByText("P.java", "<caret>")
@@ -205,6 +220,21 @@ class PlayerTest : TypeWriterFixtureTestCase() {
     // callback runs outside that window, so cancelling from it leaves already-committed
     // characters alone and lets ensureActive() decide what happens next -- which is what
     // this test needs.
+    //
+    // The assertion captures what play() itself throws (via runCatching, inside the launch
+    // block) rather than leaning only on the document's final text. With ensureActive()
+    // present, play() throws CancellationException and "ab" is exactly what's committed --
+    // that's the passing path. Without it (verified by deletion: fix round 2,
+    // task-6-report.md), play() does not return normally either, but not with
+    // CancellationException: it proceeds to attempt the 'c' insertion under an
+    // already-cancelled Job, that insertion itself commits ('c' lands in the document, same
+    // "commits, then something throws on the way out" pattern as the start-of-run test
+    // above), and then a RuntimeException surfaces from within that same write command
+    // ("The following files have changes that cannot be undone") -- a genuinely different
+    // failure than clean cancellation, not a platform detail this test should tolerate.
+    // Asserting CancellationException pins the property this test actually depends on,
+    // rather than a document-length coincidence or a platform failure mode that could look
+    // different on another release.
     @Test
     fun testCancellationStopsTypingAfterTheSecondCharacterMidRun() {
         fixture.configureByText("P.java", "<caret>")
@@ -213,9 +243,9 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         val offset = editor.caretModel.offset
         val marker = document.createRangeMarker(offset, offset)
         val player = Player(fixture.project, editor, marker, Any())
+        var thrown: Throwable? = null
         runBlocking {
-            lateinit var scope: CoroutineScope
-            scope = CoroutineScope(Job(currentCoroutineContext()[Job]))
+            val scope = CoroutineScope(Job(currentCoroutineContext()[Job]))
             val listener = object : CaretListener {
                 override fun caretPositionChanged(e: CaretEvent) {
                     if (document.text == "ab") {
@@ -226,7 +256,7 @@ class PlayerTest : TypeWriterFixtureTestCase() {
             editor.caretModel.addCaretListener(listener)
             try {
                 val run = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    player.play(listOf(Step.Type("abcdef")), instant)
+                    thrown = runCatching { player.play(listOf(Step.Type("abcdef")), instant) }.exceptionOrNull()
                 }
                 run.join()
             } finally {
@@ -234,5 +264,38 @@ class PlayerTest : TypeWriterFixtureTestCase() {
             }
         }
         assertEquals("ab", document.text)
+        assertInstanceOf(CancellationException::class.java, thrown)
+    }
+
+    // delayFor (internal for this test) computes the per-character pacing: speedMs is the base,
+    // newlineMs adds hesitation only for a newline chunk, jitterMs randomizes within a symmetric
+    // band, and the whole thing is clamped at zero. Every other test in this class uses
+    // Timing(0, 0, 0), which collapses all three knobs to zero and would not notice a newline
+    // hesitation attached to the wrong branch, a jitter sign flip, or a lost clamp.
+    @Test
+    fun testDelayForAddsNewlineHesitationOnlyToNewlines() {
+        val timing = Timing(speedMs = 10, jitterMs = 0, newlineMs = 5)
+        val player = playerForDelayForTests()
+        assertEquals(10.milliseconds, player.delayFor("a", timing))
+        assertEquals(15.milliseconds, player.delayFor("\n", timing))
+    }
+
+    @Test
+    fun testDelayForJitterStaysWithinTheSymmetricBandAndNeverGoesNegative() {
+        val timing = Timing(speedMs = 0, jitterMs = 50, newlineMs = 0)
+        val player = playerForDelayForTests()
+        repeat(500) {
+            val delay = player.delayFor("a", timing)
+            assertTrue(delay >= Duration.ZERO, "expected >= 0, was $delay")
+            assertTrue(delay <= 50.milliseconds, "expected <= 50ms, was $delay")
+        }
+    }
+
+    private fun playerForDelayForTests(): Player {
+        fixture.configureByText("P.java", "<caret>")
+        val editor = fixture.editor
+        val offset = editor.caretModel.offset
+        val marker = editor.document.createRangeMarker(offset, offset)
+        return Player(fixture.project, editor, marker, Any())
     }
 }
