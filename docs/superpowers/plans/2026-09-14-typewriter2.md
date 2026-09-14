@@ -1721,8 +1721,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
 
     fun testParseErrorsAreErrors() {
         myFixture.configureByText("T.java", "<caret>")
-        val checks = PreFlight.check(
-            project, myFixture.editor, snippet(),
+        val checks = PreFlight.check(myFixture.editor, snippet(),
             program(Step.Type("x"), errors = listOf(ParseError(3, "unknown command"))), null,
         )
         assertTrue(checks.blocked())
@@ -1731,8 +1730,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
 
     fun testUnknownActionIdIsAnError() {
         myFixture.configureByText("T.java", "<caret>")
-        val checks = PreFlight.check(
-            project, myFixture.editor, snippet(),
+        val checks = PreFlight.check(myFixture.editor, snippet(),
             program(Step.Action("NoSuchActionIdAnywhere")), null,
         )
         assertTrue(checks.blocked())
@@ -1740,8 +1738,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
 
     fun testKnownActionIdIsAccepted() {
         myFixture.configureByText("T.java", "<caret>")
-        val checks = PreFlight.check(
-            project, myFixture.editor, snippet(),
+        val checks = PreFlight.check(myFixture.editor, snippet(),
             program(Step.Action("ReformatCode"), Step.Type("x")), null,
         )
         assertFalse(checks.blocked())
@@ -1756,8 +1753,7 @@ class PreFlightTest : LightJavaCodeInsightFixtureTestCase() {
 
     fun testFormatWarningIsCarriedThrough() {
         myFixture.configureByText("T.java", "<caret>")
-        val checks = PreFlight.check(
-            project, myFixture.editor, snippet(), program(Step.Type("x")), "guard tripped",
+        val checks = PreFlight.check(myFixture.editor, snippet(), program(Step.Type("x")), "guard tripped",
         )
         assertFalse(checks.blocked())
         assertTrue(checks.any { it is Check.Warning && it.message.contains("guard tripped") })
