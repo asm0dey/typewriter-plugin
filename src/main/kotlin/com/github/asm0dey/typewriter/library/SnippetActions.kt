@@ -83,11 +83,17 @@ object SnippetRunner {
             formatWarning = result.warning
         }
 
-        val psi = PsiFileFactory.getInstance(project)
-            .createFileFromText(snippet.file.name, snippet.fileType, source, 0L, true)
-        val program = MarkerParser.parse(
-            source, MarkerScanner.scan(psi, settings.state.sentinel), settings.state.sentinel,
-        )
+        // Formatting left the text unchanged (raw, formatOnPlay off, or SnippetFormatter itself
+        // degraded and returned the original text -- see its three fallback branches, which all
+        // hand back the same `text` reference) -- probe already parsed exactly this text, so
+        // reuse it instead of scanning and parsing an identical source a second time.
+        val program = if (source === text) {
+            probe
+        } else {
+            val psi = PsiFileFactory.getInstance(project)
+                .createFileFromText(snippet.file.name, snippet.fileType, source, 0L, true)
+            MarkerParser.parse(source, MarkerScanner.scan(psi, settings.state.sentinel), settings.state.sentinel)
+        }
 
         val checks = PreFlight.check(editor, snippet, program, formatWarning)
         checks.filterIsInstance<Check.Warning>().forEach {
@@ -99,7 +105,10 @@ object SnippetRunner {
             }
             return
         }
-        val target = editor ?: return
+        // PreFlight.check returns a blocking Check.Error when editor is null (its very first
+        // check), and the blocked() branch above already returned in that case -- this documents
+        // that invariant rather than handling a case reachable from here.
+        val target = editor!!
 
         val psiTarget = PsiDocumentManager.getInstance(project).getPsiFile(target.document)
         val offset = target.caretModel.offset
@@ -141,8 +150,14 @@ class TypeSnippetAction(private val relativePath: String) : AnAction("Type: $rel
  * Drives [RunService.cursor] over the talk's ordered sequence (spec section 8, "Sequence" --
  * project directory only). `cursor` is the index of the snippet that will be typed NEXT: Type
  * Next types it and advances by one; Type Previous steps back to the snippet before the last one
- * played (cursor - 2, since cursor already points one past it) and re-advances by one. Both ends
- * clamp rather than wrap or error: an empty sequence is reported and nothing plays.
+ * played (cursor - 2, since cursor already points one past it) and re-advances by one.
+ *
+ * Both ends clamp rather than wrap or error. Wrapping would silently restart the demo from step 1
+ * in front of an audience -- the same class of surprise the spec explicitly rejects when it
+ * refuses to persist the cursor across a restart ("reopening the IDE mid-talk silently resumes at
+ * step 7"). Erroring is worse still. Clamping means nothing happens at either end, which the
+ * speaker notices immediately and can recover from -- e.g. via the picker's "start sequence here"
+ * (spec section 8). An empty sequence is reported and nothing plays.
  */
 private object SequenceRunner {
     fun playAt(e: AnActionEvent, index: Int) {

@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.library
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -40,5 +41,27 @@ class SnippetRegistrarTest : TypeWriterFixtureTestCase() {
         assertNotNull(action)
         assertEquals("Type: jcon26/01.java", action!!.templatePresentation.text)
         SnippetRegistrar.register(emptyList())
+    }
+
+    // Spec section 8 "Actions": actions are "added to a declared group so they cluster in the
+    // keymap tree" -- <group id="typewriter.snippets" .../> in plugin.xml. Registering must join
+    // that group, not just the ActionManager registry; unregistering must leave it again. A
+    // second register() call with the same path must not add a duplicate child.
+    @Test
+    fun testRegisteredActionJoinsTheDeclaredGroupAndLeavesItOnUnregister() {
+        val relativePath = "grouped.java"
+        val id = SnippetLibrary.actionId(relativePath)
+        val group = ActionManager.getInstance().getAction("typewriter.snippets") as DefaultActionGroup
+
+        SnippetRegistrar.register(listOf(relativePath))
+        val action = ActionManager.getInstance().getAction(id)!!
+        assertTrue(group.containsAction(action), "newly registered action should join the declared group")
+
+        // Idempotent: re-registering the same path must not add a second child for it.
+        SnippetRegistrar.register(listOf(relativePath))
+        assertEquals(1, group.getChildren(ActionManager.getInstance()).count { it === action })
+
+        SnippetRegistrar.register(emptyList())
+        assertFalse(group.containsAction(action), "unregistering should remove the action from the group")
     }
 }

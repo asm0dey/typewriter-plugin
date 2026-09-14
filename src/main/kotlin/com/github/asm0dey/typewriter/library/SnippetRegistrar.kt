@@ -1,15 +1,20 @@
 package com.github.asm0dey.typewriter.library
 
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 
 /**
  * Dynamic per-snippet action registration (spec section 8, "Actions"). Each snippet's action id
  * is derived from its relative path via [SnippetLibrary.actionId], not from its shortcut -- v1's
  * defect was deriving the id from the shortcut, which orphaned the user's keymap binding every
  * time the shortcut changed. This registrar never touches the keymap: the IDE owns bindings, and
- * [register] only tells [ActionManager] which ids currently exist.
+ * [register] only tells [ActionManager] which ids currently exist and keeps them clustered in the
+ * [GROUP_ID] group declared in plugin.xml, "so they cluster in the keymap tree" (spec section 8).
  */
 object SnippetRegistrar {
+
+    /** Matches `<group id="typewriter.snippets" .../>` in plugin.xml. */
+    private const val GROUP_ID = "typewriter.snippets"
 
     private val registered = linkedSetOf<String>()
 
@@ -25,10 +30,15 @@ object SnippetRegistrar {
     @Synchronized
     fun register(relativePaths: List<String>) {
         val manager = ActionManager.getInstance()
+        val group = manager.getAction(GROUP_ID) as? DefaultActionGroup
         val wanted = relativePaths.map { SnippetLibrary.actionId(it) }.toSet()
 
         for (id in registered - wanted) {
-            if (manager.getAction(id) != null) manager.unregisterAction(id)
+            val action = manager.getAction(id)
+            if (action != null) {
+                group?.remove(action)
+                manager.unregisterAction(id)
+            }
         }
         registered.retainAll(wanted)
 
@@ -36,7 +46,9 @@ object SnippetRegistrar {
             val id = SnippetLibrary.actionId(path)
             if (registered.contains(id)) continue
             if (manager.getAction(id) == null) {
-                manager.registerAction(id, TypeSnippetAction(path))
+                val action = TypeSnippetAction(path)
+                manager.registerAction(id, action)
+                group?.add(action)
             }
             registered += id
         }
