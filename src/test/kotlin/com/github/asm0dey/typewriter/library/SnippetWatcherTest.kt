@@ -110,25 +110,34 @@ class SnippetWatcherTest : TypeWriterFixtureTestCase() {
         assertNotNull(ActionManager.getInstance().getAction(SnippetLibrary.actionId("boot.java")))
     }
 
-    // Scope filter: an event outside any configured snippet directory must not trigger a resync.
-    // A phantom id is seeded directly (setup, not the behaviour under test) so that IF a resync ran
-    // it would be removed -- "ghost.java" is not a real file anywhere, so any real collect() call
-    // drops it. It surviving the unrelated VFS event proves no resync happened.
+    // Scope filter, strengthened after review: the project IS pointed at a real, configured
+    // snippet directory (so SnippetWatcher's base-path list is genuinely non-empty when the event
+    // fires -- an earlier version of this test left the project on its unconfigured default,
+    // which made SnippetWatcher's now-removed `dirs.isEmpty()` short-circuit return before the
+    // scope check ever ran, passing for the wrong reason), and the irrelevant file is created in a
+    // *second, separate* real directory that overlaps no configured base path. A phantom id is
+    // seeded directly (setup, not the behaviour under test) so that IF a resync ran it would be
+    // removed -- "ghost.java" is not a real file anywhere, so any real collect() call drops it. It
+    // surviving the unrelated VFS event proves no resync happened.
     @Test
     fun testEventsOutsideAnySnippetDirectoryDoNotTriggerAResync() {
+        val realDir = Files.createTempDirectory("tw-watch-scoped")
+        tempDirs.add(realDir)
+        pointProjectAt(realDir)
+
         val unrelated = Files.createTempDirectory("tw-watch-unrelated")
         tempDirs.add(unrelated)
-        val vDir = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(unrelated)!!
+        val vUnrelated = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(unrelated)!!
 
         SnippetRegistrar.register(listOf("ghost.java"))
         WriteAction.run<Exception> {
-            vDir.createChildData(this, "irrelevant.txt").setBinaryContent("// noise".toByteArray())
+            vUnrelated.createChildData(this, "irrelevant.txt").setBinaryContent("// noise".toByteArray())
         }
         pump()
 
         assertNotNull(
             ActionManager.getInstance().getAction(SnippetLibrary.actionId("ghost.java")),
-            "an event outside every snippet directory must not trigger SnippetSync.syncAll",
+            "an event outside every configured snippet directory must not trigger SnippetSync.syncAll",
         )
     }
 
@@ -154,6 +163,123 @@ class SnippetWatcherTest : TypeWriterFixtureTestCase() {
         assertNotNull(
             ActionManager.getInstance().getAction(SnippetLibrary.actionId("ghost.java")),
             "a content-only edit inside a snippet directory must not trigger SnippetSync.syncAll",
+        )
+    }
+
+    // Covers the VFileMoveEvent branch specifically: a file moved INTO the configured directory
+    // from an unrelated one must register its action, proving isRelevant's move branch checks the
+    // event's new path (not just create/delete paths).
+    @Test
+    fun testMovingAFileIntoASnippetDirectoryRegistersItsActionViaTheListener() {
+        val configured = Files.createTempDirectory("tw-watch-move-dest")
+        tempDirs.add(configured)
+        val vConfigured = pointProjectAt(configured)
+
+        val elsewhere = Files.createTempDirectory("tw-watch-move-src")
+        tempDirs.add(elsewhere)
+        val vElsewhere = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(elsewhere)!!
+        val file = WriteAction.compute<VirtualFile, Exception> {
+            vElsewhere.createChildData(this, "moved.java").also { it.setBinaryContent("// m".toByteArray()) }
+        }
+
+        WriteAction.run<Exception> { file.move(this, vConfigured) }
+        pump()
+
+        assertNotNull(
+            ActionManager.getInstance().getAction(SnippetLibrary.actionId("moved.java")),
+            "moving a file into a configured snippet directory should register its action via SnippetWatcher",
+        )
+    }
+
+    // Covers the VFileCopyEvent branch specifically: a file copied INTO the configured directory
+    // must register its action for the copy's destination path.
+    @Test
+    fun testCopyingAFileIntoASnippetDirectoryRegistersItsActionViaTheListener() {
+        val configured = Files.createTempDirectory("tw-watch-copy-dest")
+        tempDirs.add(configured)
+        val vConfigured = pointProjectAt(configured)
+
+        val elsewhere = Files.createTempDirectory("tw-watch-copy-src")
+        tempDirs.add(elsewhere)
+        val vElsewhere = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(elsewhere)!!
+        val file = WriteAction.compute<VirtualFile, Exception> {
+            vElsewhere.createChildData(this, "source.java").also { it.setBinaryContent("// s".toByteArray()) }
+        }
+
+        WriteAction.run<Exception> { file.copy(this, vConfigured, "copied.java") }
+        pump()
+
+        assertNotNull(
+            ActionManager.getInstance().getAction(SnippetLibrary.actionId("copied.java")),
+            "copying a file into a configured snippet directory should register its action via SnippetWatcher",
+        )
+    }
+
+    // Covers the VFilePropertyChangeEvent/isRename branch specifically: renaming a snippet file in
+    // place must drop the old id and register the new one.
+    @Test
+    fun testRenamingASnippetFileSwapsItsRegisteredAction() {
+        val realDir = Files.createTempDirectory("tw-watch-rename")
+        tempDirs.add(realDir)
+        val vDir = pointProjectAt(realDir)
+        val file = WriteAction.compute<VirtualFile, Exception> {
+            vDir.createChildData(this, "old.java").also { it.setBinaryContent("// r".toByteArray()) }
+        }
+        pump()
+        assertNotNull(ActionManager.getInstance().getAction(SnippetLibrary.actionId("old.java")))
+
+        WriteAction.run<Exception> { file.rename(this, "new.java") }
+        pump()
+
+        assertNull(
+            ActionManager.getInstance().getAction(SnippetLibrary.actionId("old.java")),
+            "renaming a snippet file should unregister its old id via SnippetWatcher",
+        )
+        assertNotNull(
+            ActionManager.getInstance().getAction(SnippetLibrary.actionId("new.java")),
+            "renaming a snippet file should register its new id via SnippetWatcher",
+        )
+    }
+
+    // Regression test for the review finding: renaming/moving the CONFIGURED DIRECTORY ITSELF
+    // (settings left pointing at the now-stale relative path, exactly as if a user renamed
+    // ".typewriter" on disk without updating TypeWriter's settings) must still unregister the
+    // snippets that used to live there. Before the fix, SnippetWatcher computed its scope from
+    // SnippetDirs.project(project) -- a VirtualFile resolved fresh AFTER the event, by the
+    // configured relative path -- which finds nothing once the directory has moved away, so the
+    // rename event was silently dropped and "01.java"'s action stayed registered forever. The fix
+    // compares the event's OLD path (which a rename/move event reports precisely) against the
+    // *configured path string* instead, which needs no live resolution to still equal the
+    // directory's former location.
+    @Test
+    fun testRenamingTheConfiguredDirectoryItselfUnregistersItsStaleActions() = runBlocking {
+        val realDir = Files.createTempDirectory("tw-watch-dir-rename")
+        tempDirs.add(realDir)
+        val vDir = pointProjectAt(realDir)
+        WriteAction.run<Exception> {
+            vDir.createChildData(this, "01.java").also { it.setBinaryContent("// one".toByteArray()) }
+        }
+        pump()
+        assertNotNull(
+            ActionManager.getInstance().getAction(SnippetLibrary.actionId("01.java")),
+            "setup: the snippet must be registered before the directory is renamed away",
+        )
+
+        // Settings are deliberately left pointing at realDir's old (now stale) path -- this is the
+        // exact scenario the finding describes, not an artificially different one. The new name is
+        // derived from realDir's own (already-unique, random-suffixed) name rather than a fixed
+        // literal: a fixed literal here collides across runs, because deleteRecursively() in
+        // cleanup() deletes via raw java.io (not through the VFS), which can leave a stale VFS
+        // record behind at that exact path for a later run to trip over.
+        val movedAwayName = "${realDir.fileName}-moved-away"
+        tempDirs.add(realDir.resolveSibling(movedAwayName)) // cleanup after rename
+        WriteAction.run<Exception> { vDir.rename(this, movedAwayName) }
+        pump()
+
+        assertNull(
+            ActionManager.getInstance().getAction(SnippetLibrary.actionId("01.java")),
+            "renaming the configured snippet directory away from its settings path should " +
+                "unregister the stale actions that used to live there",
         )
     }
 }

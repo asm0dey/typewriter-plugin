@@ -36,17 +36,26 @@ import java.nio.file.Paths
  */
 object SnippetDirs {
 
-    fun global(): VirtualFile? {
-        val path = ApplicationManager.getApplication()
-            .getService(TypeWriterSettings::class.java).state.globalDir
-        return LocalFileSystem.getInstance().findFileByNioFile(Paths.get(path))
-    }
+    /**
+     * The configured global directory's path, independent of whether it currently exists or
+     * resolves in the VFS. [SnippetWatcher] needs this distinction: the directory a VFS event
+     * moved or renamed *away from* no longer resolves via [global], but the event must still be
+     * recognised as touching the configured location.
+     */
+    fun globalPath(): String = ApplicationManager.getApplication()
+        .getService(TypeWriterSettings::class.java).state.globalDir
 
-    fun project(project: Project): VirtualFile? {
+    fun global(): VirtualFile? = LocalFileSystem.getInstance().findFileByNioFile(Paths.get(globalPath()))
+
+    /** Same distinction as [globalPath], for the given project's own directory. */
+    fun projectPath(project: Project): String? {
         val relative = project.getService(TypeWriterProjectSettings::class.java).state.projectDir
         val base = project.basePath ?: return null
-        return LocalFileSystem.getInstance().findFileByNioFile(Paths.get(base).resolve(relative))
+        return Paths.get(base).resolve(relative).toString()
     }
+
+    fun project(project: Project): VirtualFile? =
+        projectPath(project)?.let { LocalFileSystem.getInstance().findFileByNioFile(Paths.get(it)) }
 
     fun all(project: Project): List<Snippet> = SnippetLibrary.collect(global(), project(project))
 }
