@@ -570,6 +570,9 @@ directory is the toolkit bound individually.
 The cursor lives in memory, per project, and resets on restart. Persisting it
 would mean reopening the IDE mid-talk silently resumes at step 7.
 
+The cursor **clamps** at both ends: `Type Next` past the last snippet, or
+`Type Previous` before the first, does nothing. See question 20.
+
 ### Snippet files in the IDE
 
 Snippet files are fragments — often deliberately incomplete or broken, since
@@ -1046,3 +1049,4 @@ than reasoning about it (spike, 2026-09-14, IDEA 2025.3):
 | 17 | Auto-close pairs and auto-indent settings have no effect on `Type` steps, on or off | Confirms the central premise of the verbatim-insertion design. Recorded in section 7 with the exact flags tested, so a future reader need not re-derive it. |
 | 18 | The first line needs `baseIndent` too, minus the caret's column | "The caret is already there" holds only when the caret sits at `baseIndent`. Clicking a blank line at column 0 inside a class body — the common gesture — otherwise leaves the first line at column 0. |
 | 19 | Expected caret after an `action` step | The live caret, not the marker's end. Rejected: the marker's end, which aborts the run whenever an action parks the caret anywhere but the range end — completion landing inside `foo(&#124;)` is the common case, and section 7 designs for it explicitly. Drift detection exists to catch *the user* moving the caret; the run's own action is already exempt under "Abort". The `RangeMarker` remains the typed range. |
+| 20 | Cursor at either end of the sequence | Clamp. Rejected: wrap, which silently restarts the demo from step 1 in front of an audience — the same surprise section 8 refuses when it declines to persist the cursor; and error, which is worse still. Clamping means nothing happens, which the speaker notices immediately and can recover from. |
