@@ -3,4 +3,9 @@
     <name>TypeWriter</name>
     <vendor>asm0dey</vendor>
     <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="com.github.asm0dey.typewriter.ui.TypeWriterSettings"/>
+        <projectService serviceImplementation="com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings"/>
+    </extensions>
 </idea-plugin>
