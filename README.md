@@ -10,7 +10,10 @@ demos and screencasts.
    `Settings > Tools > TypeWriter > Project` too (default `<project>/.typewriter`) — see
    [Directories](#directories).
 2. `TypeWriter: New Snippet...` — name it and pick a file type. It writes the file and
-   opens it in a normal editor tab. A file type with no usable extension (`.editorconfig`,
+   opens the snippet dialog on it — the same dialog `TypeWriter: Edit Snippet...` opens,
+   with a real editor, the per-snippet speed/jitter/newline controls, and **Play**, so you
+   can type the snippet and immediately watch it play. `Open in Editor` moves it to a
+   normal editor tab when you want one. A file type with no usable extension (`.editorconfig`,
    `Dockerfile`-style exact names) gets the snippet's name as a directory instead, e.g.
    `01-setup/.editorconfig` — the exact filename still has to be exact.
 3. Edit it like any file. It is a file.

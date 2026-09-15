@@ -9,6 +9,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.fileTypes.ExactFileNameMatcher
 import com.intellij.openapi.fileTypes.ExtensionFileNameMatcher
 import com.intellij.openapi.fileTypes.FileType
@@ -26,7 +27,6 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import java.io.IOException
 import javax.swing.DefaultComboBoxModel
-import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JPanel
 
@@ -268,7 +268,7 @@ class NewSnippetDialog(project: Project) : DialogWrapper(project) {
 
     private val stemField = JBTextField("01-snippet")
     private val choices = SnippetFileNames.choices()
-    private val typeCombo = JComboBox(DefaultComboBoxModel(choices.toTypedArray())).apply {
+    private val typeCombo = ComboBox(DefaultComboBoxModel(choices.toTypedArray())).apply {
         renderer = SimpleListCellRenderer.create("") { SnippetFileNames.label(it) }
         val currentFileType = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.fileType
         selectedItem = SnippetFileNames.preselected(choices, currentFileType)
@@ -314,7 +314,13 @@ class NewSnippetAction : AnAction(), DumbAware {
         val project = e.project ?: return
         val dialog = NewSnippetDialog(project)
         if (!dialog.showAndGet()) return
-        create(project, dialog.relativePath)
+        val created = create(project, dialog.relativePath) ?: return
+        // Creating a snippet continues straight into the editing dialog -- the same one Edit
+        // Snippet opens -- rather than dropping the speaker into a bare editor tab. The name/type
+        // dialog only decides where the file goes; authoring it (content, speed/jitter/newline,
+        // raw) happens in SnippetDialog, so New and Edit share one authoring surface.
+        SnippetDirs.all(project).firstOrNull { it.file == created }
+            ?.let { openSnippetDialog(project, it) }
     }
 
     /**
@@ -322,9 +328,10 @@ class NewSnippetAction : AnAction(), DumbAware {
      * [SnippetFileNames.relativePath]) under whichever configured snippet directory exists
      * (project directory wins when both do -- a new snippet during talk prep almost always belongs
      * to the talk), creating any intermediate directory via [VfsUtil.createDirectoryIfMissing]
-     * rather than hand-rolling it, resyncs registered snippet actions so the result is playable
-     * immediately, and opens it in a normal editor tab -- there is no custom text editor to
-     * maintain. Returns the created file, or `null` if nothing was created (a duplicate, an I/O
+     * rather than hand-rolling it, and resyncs registered snippet actions so the result is
+     * playable immediately. Creation stops there: [NewSnippetAction.actionPerformed] continues
+     * into [openSnippetDialog], so the caller decides what happens next and this stays testable
+     * without showing any dialog. Returns the created file, or `null` if nothing was created (a duplicate, an I/O
      * failure, or -- only when both configured paths are blank -- no configured directory at all;
      * each already reported via [SnippetRunner.notify]). A configured directory that does not yet
      * exist is CREATED, not reported: see [SnippetDirs.forNewSnippet].
@@ -382,7 +389,6 @@ class NewSnippetAction : AnAction(), DumbAware {
             return null
         }
         SnippetSync.syncAll()
-        FileEditorManager.getInstance(project).openFile(created, true)
         return created
     }
 }

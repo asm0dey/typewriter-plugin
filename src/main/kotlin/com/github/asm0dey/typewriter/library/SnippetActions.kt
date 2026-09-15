@@ -86,7 +86,7 @@ object SnippetDirs {
      * An existing directory always wins over creating one, and the project's wins over the global
      * one (a snippet created during talk prep almost always belongs to the talk). The refresh
      * before creating catches a directory made outside the IDE; [global]/[project] deliberately
-     * do NOT refresh, because [com.github.asm0dey.typewriter.ide.SnippetHighlighting] calls them
+     * do NOT refresh, because [com.github.asm0dey.typewriter.ide.SnippetFiles] calls them
      * per file, where a synchronous VFS refresh would be far too expensive.
      *
      * Returns null only when there is genuinely nothing to use -- a blank project setting (or no
@@ -145,10 +145,15 @@ object SnippetRunner {
         }
 
         // Formatting left the text unchanged (raw, formatOnPlay off, or SnippetFormatter itself
-        // degraded and returned the original text -- see its three fallback branches, which all
-        // hand back the same `text` reference) -- probe already parsed exactly this text, so
+        // degraded and returned the original text) -- probe already parsed exactly this text, so
         // reuse it instead of scanning and parsing an identical source a second time.
-        val program = if (source === text) {
+        //
+        // Value equality, not identity: the fallback branches do hand back the same `text`
+        // reference, but a formatter that returns an EQUAL string built fresh would parse to the
+        // same program, so `==` reuses the probe in strictly more cases and is never wrong where
+        // `===` was right. Comparing strings by reference is also a Kotlin inspection finding in
+        // its own right.
+        val program = if (source == text) {
             probe
         } else {
             val psi = PsiFileFactory.getInstance(project)

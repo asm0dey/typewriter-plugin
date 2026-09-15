@@ -99,16 +99,25 @@ class EditSnippetAction : AnAction(), DumbAware {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         snippetPopup(project, "Edit Snippet")
-            ?.setItemChosenCallback { snippet -> openDialog(project, snippet) }
+            ?.setItemChosenCallback { snippet -> openSnippetDialog(project, snippet) }
             ?.createPopup()
             ?.showCenteredInCurrentWindow(project)
     }
 
-    private fun openDialog(project: Project, snippet: Snippet) {
-        if (FileDocumentManager.getInstance().getDocument(snippet.file) == null) {
-            SnippetRunner.notify(project, "${snippet.relativePath} has no readable text", NotificationType.ERROR)
-            return
-        }
-        SnippetDialog(project, snippet).show()
+}
+
+/**
+ * Opens [SnippetDialog] on [snippet], refusing a file with no readable Document (a binary or
+ * otherwise undecodable file) rather than letting the dialog's own `getDocument(...)!!` throw.
+ *
+ * File scope, and shared by [EditSnippetAction] and
+ * [com.github.asm0dey.typewriter.ui.NewSnippetAction]: creating a snippet ends in exactly the
+ * dialog that editing one opens, so there is one authoring surface rather than two that drift.
+ */
+internal fun openSnippetDialog(project: Project, snippet: Snippet) {
+    if (FileDocumentManager.getInstance().getDocument(snippet.file) == null) {
+        SnippetRunner.notify(project, "${snippet.relativePath} has no readable text", NotificationType.ERROR)
+        return
     }
+    SnippetDialog(project, snippet).show()
 }
