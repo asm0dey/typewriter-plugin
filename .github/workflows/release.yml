@@ -35,6 +35,10 @@ jobs:
         with:
           distribution: liberica
           java-version: 21
+          # Same dependency cache the build workflow uses. A release run does a full
+          # buildPlugin/signPlugin/publishPlugin from a cold checkout, so without this it
+          # re-resolves the whole IntelliJ Platform dependency set on every release.
+          cache: 'gradle'
 
       # Set environment variables
       - name: Export Properties
