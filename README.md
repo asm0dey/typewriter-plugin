@@ -17,7 +17,11 @@ demos and screencasts.
    `Dockerfile`-style exact names) gets the snippet's name as a directory instead, e.g.
    `01-setup/.editorconfig` — the exact filename still has to be exact.
 3. Edit it like any file. It is a file.
-4. `Settings > Keymap > Plugins > TypeWriter` — bind it. (Or skip binding and reach it
+4. `Settings > Keymap > Plugins > TypeWriter` — bind it. The plugin ships **no
+   default shortcuts**: the IDE owns bindings, which is what makes them survive a
+   restart. To bind a chord, double-click the action, choose *Add Keyboard
+   Shortcut*, and press both strokes (e.g. `Ctrl+T` then `1`) — the dialog records
+   the second stroke itself. (Or skip binding and reach everything from `Tools > TypeWriter`, or reach it
    through `TypeWriter: Type Snippet...`, a speed-search popup over every snippet.)
 
 ## Directories

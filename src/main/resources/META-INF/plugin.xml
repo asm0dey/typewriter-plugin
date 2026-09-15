@@ -49,5 +49,28 @@ Recreate them as files in your snippet directory.</p>
         <action id="typewriter.undoRun" class="com.github.asm0dey.typewriter.library.UndoRunAction"/>
         <action id="typewriter.typeSnippet" class="com.github.asm0dey.typewriter.ui.TypeSnippetPickerAction"/>
         <action id="typewriter.editSnippet" class="com.github.asm0dey.typewriter.ui.EditSnippetAction"/>
+
+        <!--
+          Discoverability. Without this the plugin is reachable only through Find Action or a
+          shortcut the user has already bound, and it ships no default bindings on purpose (the
+          IDE owns bindings - design spec section 8), so a fresh install had no entry point at all.
+          Declared after the actions it references, since <reference> resolves by id.
+
+          typewriter.snippets is nested rather than re-declared: SnippetRegistrar adds one action
+          per snippet to that same group at runtime, so the submenu lists the speaker's actual
+          snippets and stays live as files come and go.
+        -->
+        <group id="typewriter.menu" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <reference ref="typewriter.typeNext"/>
+            <reference ref="typewriter.typePrevious"/>
+            <reference ref="typewriter.undoRun"/>
+            <separator/>
+            <reference ref="typewriter.newSnippet"/>
+            <reference ref="typewriter.typeSnippet"/>
+            <reference ref="typewriter.editSnippet"/>
+            <separator/>
+            <reference ref="typewriter.snippets"/>
+        </group>
     </actions>
 </idea-plugin>

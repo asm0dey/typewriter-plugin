@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter
 
 import com.intellij.notification.NotificationGroup
 import com.intellij.notification.NotificationGroupManager
+import com.intellij.openapi.actionSystem.ActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -47,5 +48,25 @@ class PluginXmlResourceBundleTest : TypeWriterFixtureTestCase() {
     fun testNotificationGroupDisplayNameResolvesThroughTheBundle() {
         assertEquals(true, NotificationGroupManager.getInstance().isGroupRegistered("TypeWriter"))
         assertEquals("TypeWriter", NotificationGroup.getGroupTitle("TypeWriter"))
+    }
+
+    // Discoverability: with no default shortcuts (the IDE owns bindings -- spec section 8), a
+    // fresh install can only reach the plugin through Find Action unless it appears in a menu.
+    // Asserts the real resolved group, not the XML text, so a <reference> to an id that does not
+    // exist -- which plugin.xml validation does not catch -- fails here.
+    @Test
+    fun testToolsMenuGroupIsRegisteredAndListsTheActions() {
+        val menu = ActionManager.getInstance().getAction("typewriter.menu")
+        assertEquals("TypeWriter", menu?.templatePresentation?.text, "menu group text")
+
+        val children = (menu as ActionGroup).getChildren(null)
+            .mapNotNull { ActionManager.getInstance().getId(it) }
+        for (id in listOf(
+            "typewriter.typeNext", "typewriter.typePrevious", "typewriter.undoRun",
+            "typewriter.newSnippet", "typewriter.typeSnippet", "typewriter.editSnippet",
+            "typewriter.snippets",
+        )) {
+            assertEquals(true, children.contains(id), "menu is missing \"$id\"; children were $children")
+        }
     }
 }
