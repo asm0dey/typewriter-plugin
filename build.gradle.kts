@@ -30,6 +30,10 @@ dependencies {
         testBundledPlugin("com.intellij.java")
         // Test-only: acceptance test 2 (Dockerfile golden test) needs Docker's FileType/formatter.
         testBundledPlugin("Docker")
+        // Test-only: SnippetFileNameTest needs a real exact-only FileType (no ExtensionFileNameMatcher
+        // at all) to test the stem-as-directory branch of SnippetFileNames.relativePath (spec
+        // question 23) against actual platform behaviour rather than a hand-rolled FileType stub.
+        testBundledPlugin("org.editorconfig.editorconfigjetbrains")
     }
 }
 
