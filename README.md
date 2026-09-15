@@ -5,7 +5,7 @@ demos and screencasts.
 
 ## Quick start
 
-1. `Settings > Tools > TypeWriter` — set your snippet directory (default `~/.typewriter`).
+1. `Settings > Tools > TypeWriter` — set your snippet directory (default: `typewriter` under the JetBrains shared data directory -- `~/.local/share/JetBrains` on Linux, `~/Library/Application Support/JetBrains` on macOS, `%APPDATA%\JetBrains` on Windows).
    To give one talk its own snippets that travel with its demo repo, set
    `Settings > Tools > TypeWriter > Project` too (default `<project>/.typewriter`) — see
    [Directories](#directories).
@@ -23,7 +23,7 @@ Two directories contribute, and they layer:
 
 | Directory | Setting | Role |
 |---|---|---|
-| `~/.typewriter` | `Settings > Tools > TypeWriter` (default) | your reusable toolkit across talks |
+| `<JetBrains shared data>/typewriter` | `Settings > Tools > TypeWriter` (default) | your reusable toolkit across talks -- one directory, shared by every JetBrains IDE you demo in |
 | `<project>/.typewriter` | `Settings > Tools > TypeWriter > Project` (default) | one talk's steps, committed with the demo repo |
 
 A project snippet **shadows** a global snippet at the same relative path — the same rule
@@ -95,7 +95,8 @@ these snippets — there is no marker to carry them.
 
 Name your project snippets `01-`, `02-` and bind `TypeWriter: Type Next` once.
 Project snippets (`<project>/.typewriter`) are the talk; global snippets
-(`~/.typewriter`) are your reusable toolkit and are not part of the sequence.
+(`<JetBrains shared data>/typewriter`) are your reusable toolkit and are not part of
+the sequence.
 
 `TypeWriter: Type Previous` steps back one slot the same way. Both stop at the ends of
 the sequence rather than wrapping around — pressing `Type Next` on the last snippet does
@@ -103,3 +104,5 @@ nothing rather than silently restarting the talk from step one in front of an au
 
 If a run goes wrong, `TypeWriter: Undo Run` removes exactly what the last run typed
 (as long as nothing else has touched the document since).
+
+Either directory is created for you the first time you add a snippet to it.

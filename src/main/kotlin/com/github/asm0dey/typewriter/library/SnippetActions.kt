@@ -22,13 +22,16 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiFileFactory
+import java.io.IOException
 import java.nio.file.Paths
 
 /**
@@ -50,9 +53,16 @@ object SnippetDirs {
 
     fun global(): VirtualFile? = LocalFileSystem.getInstance().findFileByNioFile(Paths.get(globalPath()))
 
-    /** Same distinction as [globalPath], for the given project's own directory. */
+    /**
+     * Same distinction as [globalPath], for the given project's own directory.
+     *
+     * Null for a blank setting, deliberately: `Path.resolve("")` yields the project's own base
+     * directory, which would silently make the WHOLE project the snippet directory -- every file
+     * in it a registered snippet action, and every save inside it a snippet-library resync.
+     */
     fun projectPath(project: Project): String? {
         val relative = project.getService(TypeWriterProjectSettings::class.java).state.projectDir
+        if (relative.isBlank()) return null
         val base = project.basePath ?: return null
         return Paths.get(base).resolve(relative).toString()
     }
@@ -61,6 +71,37 @@ object SnippetDirs {
         projectPath(project)?.let { LocalFileSystem.getInstance().findFileByNioFile(Paths.get(it)) }
 
     fun all(project: Project): List<Snippet> = SnippetLibrary.collect(global(), project(project))
+
+    /**
+     * The directory a newly created snippet belongs in, creating the configured directory when
+     * nothing exists there yet.
+     *
+     * Both configured paths default to a non-blank value (`~/.typewriter`, and the
+     * project-relative `.typewriter`), while [global] and [project] resolve through the VFS and
+     * return null for a path with no directory behind it. So on a fresh install the normal state
+     * is *configured but absent*, not unconfigured -- and reporting that as "no snippet directory,
+     * set one in Settings" told the user to set a directory that was already set. Creating it is
+     * what they meant by asking for a new snippet.
+     *
+     * An existing directory always wins over creating one, and the project's wins over the global
+     * one (a snippet created during talk prep almost always belongs to the talk). The refresh
+     * before creating catches a directory made outside the IDE; [global]/[project] deliberately
+     * do NOT refresh, because [com.github.asm0dey.typewriter.ide.SnippetHighlighting] calls them
+     * per file, where a synchronous VFS refresh would be far too expensive.
+     *
+     * Returns null only when there is genuinely nothing to use -- a blank project setting (or no
+     * project base) AND a blank global path -- which is the only case that warrants telling the
+     * user to configure something. Throws [IOException] if creation itself fails; the caller
+     * reports that distinctly, since "could not create" is a different problem from "not set".
+     */
+    @Throws(IOException::class)
+    fun forNewSnippet(project: Project): VirtualFile? {
+        project(project)?.let { return it }
+        global()?.let { return it }
+        val target = projectPath(project) ?: globalPath().takeIf { it.isNotBlank() } ?: return null
+        LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Paths.get(target))?.let { return it }
+        return WriteAction.compute<VirtualFile, IOException> { VfsUtil.createDirectoryIfMissing(target) }
+    }
 }
 
 /**

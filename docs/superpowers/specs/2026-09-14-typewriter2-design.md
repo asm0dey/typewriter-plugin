@@ -508,7 +508,16 @@ Two directories contribute, and they **layer**:
 
 | Directory | Role |
 |---|---|
-| `~/.typewriter` (app setting, default) | the speaker's reusable toolkit across talks |
+| `<JetBrains shared data>/typewriter` (app setting, default) | the speaker's reusable toolkit across talks |
+
+> **Amended.** The global default was `~/.typewriter`, a Unix-ism that is wrong on
+> Windows and macOS. It is now `PathManager.getCommonDataPath()/typewriter`. Common
+> data, not `getConfigPath()`: config is per-product AND per-version (measured:
+> `~/.config/JetBrains/IntelliJIdea2026.2`), and a toolkit described here as *reusable*
+> must be visible to the same speaker's PyCharm or RubyMine and survive IDE upgrades.
+> A configured directory that does not exist yet is created when a snippet is first
+> added to it, rather than reported as unconfigured.
+
 | `<project>/.typewriter` (project setting) | one talk's steps, committed with the demo repo |
 
 A snippet in the project directory **shadows** a global snippet with the same

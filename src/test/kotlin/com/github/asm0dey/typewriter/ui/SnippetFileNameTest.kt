@@ -12,6 +12,7 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.junit5.RunInEdt
 import java.nio.file.Files
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -340,6 +341,36 @@ class SnippetFileNameTest : TypeWriterFixtureTestCase() {
         } finally {
             projectSettings.loadState(TypeWriterProjectSettings.State(projectDir = savedProjectDir))
             realDir.toFile().deleteRecursively()
+        }
+    }
+
+    // The regression a real runIde session hit: "no snippet directory; set one in Settings" on a
+    // directory that WAS set. Both settings default to a non-blank path (the global one under the
+    // JetBrains common data directory, the project one to `.typewriter`), while SnippetDirs.project
+    // and .global resolve through the VFS, which returns null for a path with no directory behind
+    // it. So on a fresh install the state is routinely *configured but absent* -- and that was
+    // reported with the one message that cannot be true of it. Asking for a new snippet is a clear
+    // instruction to put it somewhere; creating the configured directory is that somewhere.
+    @Test
+    fun testCreateMakesTheConfiguredDirectoryWhenItDoesNotExistYet() {
+        val parent = Files.createTempDirectory("tw-absent")
+        val absent = parent.resolve("never-created")
+        val projectSettings = fixture.project.getService(TypeWriterProjectSettings::class.java)
+        val savedProjectDir = projectSettings.state.projectDir
+        try {
+            assertFalse(Files.exists(absent), "precondition: the configured directory must not exist yet")
+            projectSettings.loadState(TypeWriterProjectSettings.State(projectDir = absent.toString()))
+
+            val created = NewSnippetAction().create(fixture.project, "00-intro.java")
+
+            assertNotNull(created, "a configured-but-absent directory must be created, not reported as unset")
+            assertTrue(Files.isDirectory(absent), "the configured directory itself must now exist on disk")
+            val projectDir = SnippetDirs.project(fixture.project)
+            assertNotNull(projectDir, "the freshly created directory must resolve through the VFS")
+            assertEquals(listOf("00-intro.java"), SnippetLibrary.sequence(projectDir).map { it.relativePath })
+        } finally {
+            projectSettings.loadState(TypeWriterProjectSettings.State(projectDir = savedProjectDir))
+            parent.toFile().deleteRecursively()
         }
     }
 }

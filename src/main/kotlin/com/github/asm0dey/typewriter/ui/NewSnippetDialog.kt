@@ -324,8 +324,10 @@ class NewSnippetAction : AnAction(), DumbAware {
      * to the talk), creating any intermediate directory via [VfsUtil.createDirectoryIfMissing]
      * rather than hand-rolling it, resyncs registered snippet actions so the result is playable
      * immediately, and opens it in a normal editor tab -- there is no custom text editor to
-     * maintain. Returns the created file, or `null` if nothing was created (no configured
-     * directory, a duplicate, or an I/O failure -- each already reported via [SnippetRunner.notify]).
+     * maintain. Returns the created file, or `null` if nothing was created (a duplicate, an I/O
+     * failure, or -- only when both configured paths are blank -- no configured directory at all;
+     * each already reported via [SnippetRunner.notify]). A configured directory that does not yet
+     * exist is CREATED, not reported: see [SnippetDirs.forNewSnippet].
      *
      * Exposed as a standalone function, not folded into [actionPerformed], specifically so a test
      * can exercise the real creation path -- duplicate detection across a nested path, directory
@@ -340,10 +342,21 @@ class NewSnippetAction : AnAction(), DumbAware {
      * exact same path is refused.
      */
     fun create(project: Project, relativePath: String): VirtualFile? {
-        val directory = SnippetDirs.project(project) ?: SnippetDirs.global() ?: run {
+        val directory = try {
+            SnippetDirs.forNewSnippet(project)
+        } catch (ex: IOException) {
             SnippetRunner.notify(
                 project,
-                "no snippet directory; set one in Settings > Tools > TypeWriter",
+                "could not create the snippet directory: ${ex.message}",
+                NotificationType.ERROR,
+            )
+            return null
+        } ?: run {
+            // Only reachable when BOTH configured paths are blank -- see SnippetDirs.forNewSnippet,
+            // which creates a configured-but-absent directory rather than reporting it as unset.
+            SnippetRunner.notify(
+                project,
+                "no snippet directory configured; set one in Settings > Tools > TypeWriter",
                 NotificationType.ERROR,
             )
             return null

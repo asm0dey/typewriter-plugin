@@ -2,8 +2,10 @@ package com.github.asm0dey.typewriter.ui
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -22,7 +24,19 @@ class TypeWriterSettingsTest : TypeWriterFixtureTestCase() {
         assertEquals(300, state.newlineMs)
         assertEquals("tw:", state.sentinel)
         assertTrue(state.formatOnPlay)
-        assertTrue(state.globalDir.endsWith(".typewriter"))
+        // The property that matters is OS-correctness, not a literal path: the default lives under
+        // the JetBrains COMMON data directory, which carries no product or version segment, so one
+        // toolkit serves every IDE the speaker demos in. Asserting equality with
+        // PathManager.getCommonDataPath() rather than a hard-coded "~/..." is what keeps this
+        // meaningful on Windows and macOS, where the old `~/.typewriter` default was simply wrong.
+        assertEquals(
+            PathManager.getCommonDataPath().resolve("typewriter").toString(),
+            state.globalDir,
+        )
+        assertFalse(
+            PathManager.getCommonDataPath().toString().contains("IntelliJIdea"),
+            "the global toolkit must not sit under a product-versioned path -- it is shared across IDEs",
+        )
     }
 
     @Test
