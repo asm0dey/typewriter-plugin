@@ -4,6 +4,7 @@ import com.github.asm0dey.typewriter.library.SnippetDirs
 import com.intellij.codeInsight.daemon.impl.analysis.DefaultHighlightingSettingProvider
 import com.intellij.codeInsight.daemon.impl.analysis.FileHighlightingSetting
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 
@@ -18,7 +19,24 @@ import com.intellij.openapi.vfs.VirtualFile
  */
 object SnippetFiles {
 
-    fun isSnippet(project: Project, file: VirtualFile): Boolean = isUnder(file, roots(project))
+    /**
+     * Marks the in-memory file [com.github.asm0dey.typewriter.ui.newSnippetDocument] builds for a
+     * snippet being authored in the dialog, before any file exists on disk.
+     *
+     * Both snippet predicates are "is this file under a configured snippet directory", which that
+     * file cannot be -- it has no directory at all. Without this marker the dialog that is now the
+     * primary authoring surface would lose the two things spec sections 8 and 9 promise a snippet
+     * file: `tw:` marker completion, and suppressed highlighting on a deliberately-incomplete
+     * fragment. Both worked when a new snippet was edited as a real file in the snippet directory,
+     * so both are regressions to prevent rather than features to add.
+     */
+    val SCRATCH = Key.create<Boolean>("typewriter.scratchSnippet")
+
+    fun isSnippet(project: Project, file: VirtualFile): Boolean =
+        isScratch(file) || isUnder(file, roots(project))
+
+    /** True for the dialog's not-yet-saved snippet -- see [SCRATCH]. */
+    fun isScratch(file: VirtualFile): Boolean = file.getUserData(SCRATCH) == true
 
     /**
      * Exposed separately from [isSnippet] so [SnippetHighlightingSettingProvider.settingFor] can
@@ -46,5 +64,9 @@ class SnippetHighlightingSettingProvider : DefaultHighlightingSettingProvider() 
 
     /** Separated so it can be tested without resolving the configured directories. */
     fun settingFor(file: VirtualFile, roots: List<VirtualFile>): FileHighlightingSetting? =
-        if (SnippetFiles.isUnder(file, roots)) FileHighlightingSetting.SKIP_HIGHLIGHTING else null
+        if (SnippetFiles.isScratch(file) || SnippetFiles.isUnder(file, roots)) {
+            FileHighlightingSetting.SKIP_HIGHLIGHTING
+        } else {
+            null
+        }
 }

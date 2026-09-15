@@ -1,5 +1,6 @@
 package com.github.asm0dey.typewriter.ui
 
+import com.github.asm0dey.typewriter.ide.SnippetFiles
 import com.github.asm0dey.typewriter.library.DirectiveSidecar
 import com.github.asm0dey.typewriter.library.SnippetDirs
 import com.github.asm0dey.typewriter.library.SnippetRunner
@@ -22,6 +23,8 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiFileFactory
 import com.intellij.ui.ComboboxSpeedSearch
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.SimpleListCellRenderer
@@ -302,9 +305,11 @@ class SnippetDialog private constructor(
             ComboboxSpeedSearch.installSpeedSearch(this) { SnippetFileNames.label(it) }
             addActionListener {
                 fileType = selectedItem as FileType
-                // Re-type the SAME document so nothing typed so far is lost: the language only
-                // decides highlighting here, and the file name it implies is not computed until
-                // materialise().
+                // A NEW document, carrying the text over: the old one is backed by a PsiFile of
+                // the previous language (see [newSnippetDocument]), and reusing it would leave the
+                // editor's PSI -- and so reformat, completion and inspections -- speaking the
+                // language the speaker just switched away from.
+                document = newSnippetDocument(project, fileType, document.text)
                 editorField.setNewDocumentAndFileType(fileType, document)
             }
         }
@@ -312,7 +317,7 @@ class SnippetDialog private constructor(
 
     private var document: Document = snippet
         ?.let { FileDocumentManager.getInstance().getDocument(it.file)!! }
-        ?: EditorFactory.getInstance().createDocument("")
+        ?: newSnippetDocument(project, initialFileType, "")
 
     private val editorField = EditorTextField(document, project, fileType, false, false).apply {
         preferredSize = Dimension(680, 360)
@@ -471,6 +476,7 @@ class SnippetDialog private constructor(
         FileDocumentManager.getInstance().saveDocument(document)
     }
 
+
     /**
      * Writes the in-memory snippet to disk under a generated, collision-free name and adopts it,
      * so everything after this point (timing store, playback) works exactly as it does for a
@@ -514,4 +520,32 @@ class SnippetDialog private constructor(
         snippet = SnippetDirs.all(project).firstOrNull { it.file == file }
         return snippet != null
     }
+}
+
+/**
+ * A document for a snippet that has no file yet, backed by a real [com.intellij.psi.PsiFile]
+ * of [type].
+ *
+ * Not `EditorFactory.createDocument`: that yields a document with no PSI behind it, and every
+ * language feature in the dialog's editor is a function of PSI. Reformat Code in particular
+ * silently does nothing, because there is no file for it to format -- which is exactly what
+ * was reported. Completion, inspections and brace matching degrade the same way.
+ *
+ * `eventSystemEnabled = true` is the part that matters: it gives the file a
+ * [com.intellij.testFramework.LightVirtualFile] and keeps PSI and Document in sync, so edits
+ * in the editor reach the PSI that the platform's actions operate on. With it false the file
+ * is a detached parse tree and reformat would still do nothing.
+ *
+ * The name only has to be one the type actually accepts -- [SnippetFileNames.suggestName]
+ * already knows how to build one for an exact-name type (`Dockerfile`, `.editorconfig`) as
+ * well as an extension-based one -- since it is what the platform maps back to [type].
+ */
+internal fun newSnippetDocument(project: Project, type: FileType, text: String): Document {
+    val psi = PsiFileFactory.getInstance(project)
+        .createFileFromText(SnippetFileNames.suggestName(type, "snippet"), type, text, 0L, true)
+    // Mark it so the snippet predicates accept a file that is under no directory at all --
+    // otherwise the dialog loses marker completion and fragment-highlighting suppression.
+    psi.virtualFile?.putUserData(SnippetFiles.SCRATCH, true)
+    return PsiDocumentManager.getInstance(project).getDocument(psi)
+        ?: EditorFactory.getInstance().createDocument(text)
 }
