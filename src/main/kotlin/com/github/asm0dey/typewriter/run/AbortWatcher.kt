@@ -28,6 +28,16 @@ import com.intellij.openapi.application.ApplicationManager
  *
  * One watcher is scoped to one [player] (hence one run): [RunService] installs a fresh instance
  * per run, disposed when that run ends.
+ *
+ * Threading: both callbacks arrive on the EDT, because the platform publishes
+ * [AnActionListener.TOPIC] from the action system and the typed-action handler, both of which run
+ * there. This class asserts nothing itself -- all it does is call [RunService.cancel], which is
+ * thread-safe. What does depend on it is everything ELSE subscribed to the same topic: the bus
+ * delivers synchronously on the publishing thread to every subscriber, and platform listeners on
+ * this topic (the hint manager's, for one) assert the EDT and log "must be called on EDT"
+ * otherwise. So anything that SIMULATES one of these events -- a test, in practice -- must
+ * publish it on the EDT too, however thread-safe this listener is; see
+ * `RunServiceTest.publishOnEdt`.
  */
 class AbortWatcher(
     private val player: Player,

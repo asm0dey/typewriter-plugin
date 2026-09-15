@@ -4,6 +4,7 @@ import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.model.Timing
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.Service
@@ -11,6 +12,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.RangeMarker
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.util.concurrency.ThreadingAssertions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,6 +32,16 @@ private class LastRun(val editor: Editor, val marker: RangeMarker, val stampAtEn
  * `@Service(PROJECT)` is itself the plugin.xml registration; it must not also appear in
  * plugin.xml as a `<projectService>`, or the platform can construct two instances -- one silently
  * holding stale run state.
+ *
+ * Threading, stated once here and again on each method, because it differs per method and an
+ * undeclared thread requirement is how this class's own tests once violated it:
+ *  - [run] and [launch]: any thread -- they dispatch to the EDT themselves. The one forbidden
+ *    caller is a thread that is *blocking* the EDT (`runBlocking` on the EDT), which can never
+ *    service that dispatch.
+ *  - [cancel] and [isRunning]: any thread.
+ *  - [canUndoLastRun]: any thread -- `UndoRunAction` declares `ActionUpdateThread.BGT`, so the
+ *    platform really does call it from a background thread; it takes its own read action.
+ *  - [undoLastRun]: EDT only, asserted at its entry.
  */
 @Service(Service.Level.PROJECT)
 class RunService(private val project: Project, private val scope: CoroutineScope) {
@@ -58,6 +70,9 @@ class RunService(private val project: Project, private val scope: CoroutineScope
      * cancellation only through `delay()`/`ensureActive()` on its own [Job], so cancelling
      * anything other than that exact job (e.g. merely flipping a flag) would leave a running
      * player deaf to the abort. A no-op when nothing is running.
+     *
+     * Threading: any thread -- [Job.cancel] is thread-safe. In production this is only ever
+     * reached from [AbortWatcher]'s callbacks, which the platform publishes on the EDT.
      */
     fun cancel() {
         currentJob?.cancel()
@@ -66,6 +81,9 @@ class RunService(private val project: Project, private val scope: CoroutineScope
     /**
      * Fire-and-forget entry point for actions (Tasks 12/17), which must not suspend: starts a
      * run on this service's own project-scoped [scope] and returns immediately.
+     *
+     * Threading: any thread -- the run is launched on [Dispatchers.EDT], so the caller need not
+     * already be there.
      */
     fun launch(editor: Editor, steps: List<Step>, timing: Timing) {
         scope.launch(Dispatchers.EDT) { run(editor, steps, timing) }
@@ -84,10 +102,13 @@ class RunService(private val project: Project, private val scope: CoroutineScope
      * other cancelled suspend function; [launch] is the entry point for callers that do not want
      * to handle that.
      *
-     * Threading: document mutation must happen on the EDT inside a write action -- [Player]'s own
-     * `insert()` calls `runWriteAction` directly, which requires the calling thread to already
-     * *be* the EDT. `withContext(Dispatchers.EDT)` below is what guarantees that regardless of
-     * which thread called `run`.
+     * Threading: callable from any thread. Document mutation must happen on the EDT inside a
+     * write action -- [Player]'s own `insert()` calls `runWriteAction` directly, which requires
+     * the calling thread to already *be* the EDT. `withContext(Dispatchers.EDT)` below is what
+     * guarantees that regardless of which thread called `run`. The single forbidden caller is a
+     * thread that is *blocking* the EDT: `runBlocking { run(...) }` executed on the EDT deadlocks,
+     * because the `withContext` below then waits for a thread that is waiting for it (this is why
+     * `RunServiceTest` is the one fixture test in this repo without `@RunInEdt`).
      */
     suspend fun run(editor: Editor, steps: List<Step>, timing: Timing): Boolean {
         if (!running.compareAndSet(false, true)) return false
@@ -160,9 +181,18 @@ class RunService(private val project: Project, private val scope: CoroutineScope
      */
     fun canUndoLastRun(): Boolean {
         val run = lastRun ?: return false
-        return run.marker.isValid &&
-            run.editor.document.modificationStamp == run.stampAtEnd &&
-            run.marker.endOffset > run.marker.startOffset
+        // Threading: deliberately NOT EDT-only. `UndoRunAction` declares
+        // `ActionUpdateThread.BGT`, so the platform really does call this from a background
+        // thread, and asserting the EDT here would be asserting a requirement this method does
+        // not have. What it does need off the EDT is a read action: the document's modification
+        // stamp and the marker's offsets are three reads that must describe ONE document state,
+        // and without a read action a write action on the EDT can commit an edit between them --
+        // answering for a state the document never had.
+        return ReadAction.compute<Boolean, RuntimeException> {
+            run.marker.isValid &&
+                run.editor.document.modificationStamp == run.stampAtEnd &&
+                run.marker.endOffset > run.marker.startOffset
+        }
     }
 
     /**
@@ -171,8 +201,15 @@ class RunService(private val project: Project, private val scope: CoroutineScope
      * per-character command already gives native Ctrl+Z a chance to merge a run into one step,
      * but that merging is platform behaviour this plugin does not control -- this is the path
      * that depends only on code this plugin owns.
+     *
+     * Threading: EDT only. [WriteCommandAction.runWriteCommandAction] asserts this itself, but
+     * only once execution is already several frames deep inside the platform, and -- for a caller
+     * that reaches this from a coroutine -- only depending on which thread that coroutine's
+     * continuation happened to resume on. Asserting at the entry point turns that into an
+     * immediate, deterministic failure naming this method.
      */
     fun undoLastRun(): Boolean {
+        ThreadingAssertions.assertEventDispatchThread()
         val run = lastRun ?: return false
         if (!canUndoLastRun()) return false
         WriteCommandAction.runWriteCommandAction(project, "TypeWriter: Undo Run", null, {

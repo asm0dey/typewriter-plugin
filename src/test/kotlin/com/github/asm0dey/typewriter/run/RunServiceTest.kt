@@ -33,12 +33,45 @@ import org.junit.jupiter.api.Test
  * only for the individual calls the platform actually requires there: PSI-backed fixture setup
  * and explicit write actions. See [TypeWriterFixtureTestCase]'s kdoc for where the annotation
  * that used to cover this went instead.
+ *
+ * Running off the EDT is a property of this class, not a licence: anything here that simulates a
+ * platform event the platform itself only ever publishes on the EDT must go through [publishOnEdt]
+ * -- see its kdoc for the intermittent failure that came of not doing so.
  */
 class RunServiceTest : TypeWriterFixtureTestCase() {
 
     private fun service() = fixture.project.getService(RunService::class.java)
 
     private fun onEdt(action: () -> Unit) = ApplicationManager.getApplication().invokeAndWait(action)
+
+    /**
+     * Publishes one of the platform's own [AnActionListener] events the way the platform itself
+     * does: from the EDT. Every test below that fakes a keystroke or an action mid-run must go
+     * through this, never `syncPublisher(...)` on this class's background test thread.
+     *
+     * Why: the message bus delivers this topic SYNCHRONOUSLY, on the publishing thread, to every
+     * subscriber -- not just to this run's [AbortWatcher]. The platform's own subscribers are on
+     * it too, and `LocalHintManager$MyAnActionListener.beforeActionPerformed` calls `hideHints()`,
+     * which asserts the EDT. Publishing from the test thread therefore made the PLATFORM log
+     * "Assert: must be called on EDT", which the JUnit5 test-framework's TestLoggerInterceptor
+     * turns into a failure of whichever test is running.
+     *
+     * Why it looked like flakiness: `LocalHintManager` is instantiated lazily, so that subscriber
+     * exists only once some earlier test in the same JVM has caused a hint/lookup to appear
+     * (`MarkerCompletionTest` does). The suite's class order varies between runs, so the same code
+     * failed or passed depending on whether that class had run yet -- `--tests '*RunServiceTest*'`
+     * alone always passed; `--tests '*MarkerCompletionTest*' --tests '*RunServiceTest*'` always
+     * failed.
+     *
+     * `invokeAndWait` (not `invokeLater`) additionally removes the delivery race: the event is
+     * guaranteed to have been processed before the test thread moves on. It is still queued on the
+     * EDT's own event queue, so it can only land between two of the run's dispatcher turns --
+     * exactly like a real keypress, and exactly the property
+     * [testANewlineOnlyTimingRunIsStillAbortableMidRun] relies on.
+     */
+    private fun publishOnEdt(event: (AnActionListener) -> Unit) = onEdt {
+        event(ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC))
+    }
 
     private fun configure(text: String) {
         onEdt { fixture.configureByText("R.java", text) }
@@ -118,8 +151,7 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
                 svc.run(editor, listOf(Step.Type("abcdefghijklmnopqrst")), Timing(15, 0, 0))
             }
             while (document.text.isEmpty()) yield()
-            ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
-                .beforeEditorTyping('z', DataContext.EMPTY_CONTEXT)
+            publishOnEdt { it.beforeEditorTyping('z', DataContext.EMPTY_CONTEXT) }
             job.join()
         }
         assertFalse(svc.isRunning())
@@ -196,7 +228,9 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
             // observed" -- while that same thread is busy running Player's loop synchronously.
             // invokeLater reproduces that: it queues onto the same EDT `withContext(Dispatchers.
             // EDT)` uses, so it can only run between two dispatcher turns, i.e. only if Player's
-            // loop actually suspends somewhere.
+            // loop actually suspends somewhere. [publishOnEdt] has the same property (it queues
+            // too, and additionally waits for delivery); this call keeps `invokeLater` only
+            // because this test is specifically about what a *deferred* EDT event can observe.
             ApplicationManager.getApplication().invokeLater(
                 {
                     ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
@@ -246,8 +280,7 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
         runBlocking {
             val job = launch { svc.run(editor, listOf(Step.Type(text)), Timing(1, 0, 0)) }
             while (document.text.isEmpty()) yield()
-            ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
-                .beforeActionPerformed(action, TestActionEvent.createTestEvent(action))
+            publishOnEdt { it.beforeActionPerformed(action, TestActionEvent.createTestEvent(action)) }
             job.join()
         }
         assertFalse(svc.isRunning())
@@ -272,12 +305,18 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
             override fun actionPerformed(e: AnActionEvent) = Unit
         }
         ActionManager.getInstance().registerAction(actionId, action)
+        // Read on the EDT at the instant the event is delivered. Without it this test would pass
+        // vacuously if the event ever landed AFTER the run finished: the exemption would never
+        // have been exercised, yet the document would still hold the full text.
+        var lengthAtDelivery = -1
         try {
             runBlocking {
                 val job = launch { svc.run(editor, listOf(Step.Type("abcdefghij")), Timing(1, 0, 0)) }
                 while (document.text.isEmpty()) yield()
-                ApplicationManager.getApplication().messageBus.syncPublisher(AnActionListener.TOPIC)
-                    .beforeActionPerformed(action, TestActionEvent.createTestEvent(action))
+                publishOnEdt {
+                    lengthAtDelivery = document.textLength
+                    it.beforeActionPerformed(action, TestActionEvent.createTestEvent(action))
+                }
                 job.join()
             }
         } finally {
@@ -285,5 +324,10 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
         }
         assertEquals("abcdefghij", document.text)
         assertFalse(svc.isRunning())
+        assertTrue(
+            lengthAtDelivery in 1..9,
+            "the event must land mid-run for the exemption to be exercised, but the document held " +
+                "$lengthAtDelivery of 10 characters when it was delivered",
+        )
     }
 }

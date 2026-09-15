@@ -9,6 +9,7 @@ import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.project.Project
+import com.intellij.util.concurrency.ThreadingAssertions
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -34,6 +35,9 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * [runId] is passed as the `groupId` of every write command so native undo can merge a run's
  * per-character edits into one step (spec section 7, "Recovery").
+ *
+ * Threading: [play] is EDT-only, asserted at its entry -- see the assertion's own comment for why
+ * the requirement is declared here and not left to [RunService]'s kdoc.
  */
 class Player(
     private val project: Project,
@@ -45,7 +49,17 @@ class Player(
     var invokingAction: Boolean = false
         private set
 
+    /**
+     * Threading: EDT only, and the whole loop stays there -- every resumption after a `delay()`
+     * comes back on the dispatcher this was started on, so asserting once at the entry covers the
+     * run. The requirement is real and not merely inherited from [RunService]: [insert] calls
+     * `runWriteAction` directly and [runAction] dispatches a real IDE action, neither of which is
+     * legal off the EDT. Declaring it here means a future non-EDT caller fails immediately, at a
+     * frame that names this method, instead of hanging or failing somewhere inside the platform
+     * (that hang cost this project two diagnosis rounds).
+     */
     suspend fun play(steps: List<Step>, timing: Timing, onCaretDrift: () -> Unit = {}) {
+        ThreadingAssertions.assertEventDispatchThread()
         var expectedOffset = editor.caretModel.offset
         for (step in steps) {
             // delay(0) (an instant Timing, or a Step.Pause(0)) returns without ever suspending,
