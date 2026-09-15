@@ -7,6 +7,8 @@
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="TypeWriter" displayType="BALLOON"/>
         <postStartupActivity implementation="com.github.asm0dey.typewriter.library.SnippetStartupActivity"/>
+        <defaultHighlightingSettingProvider
+            implementation="com.github.asm0dey.typewriter.ide.SnippetHighlightingSettingProvider"/>
     </extensions>
 
     <applicationListeners>
