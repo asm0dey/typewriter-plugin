@@ -223,12 +223,19 @@ jobs:
           VERSION=$(./gradlew properties --property version --quiet --console=plain | tail -n 1 | cut -f2- -d ' ')
           RELEASE_NOTE="./build/tmp/release_note.txt"
           mkdir -p "$(dirname "$RELEASE_NOTE")"
-          # CHANGELOG.md may not carry an "Unreleased" section yet (e.g. right after a version was
-          # just released with its own header and no new section started above it) -- getChangelog
-          # --unreleased fails in that case. Fall back to an empty note rather than failing the
-          # draft-release step; the draft's body can always be edited by hand before publishing.
-          ./gradlew getChangelog --unreleased --no-header --quiet --console=plain --output-file="$RELEASE_NOTE" \
-            || : > "$RELEASE_NOTE"
+          # This changelog documents each version under its own number, so the notes for the
+          # version being released ARE the newest section -- which is what getChangelog returns by
+          # default. NOT --unreleased: that requires an "[Unreleased]" heading this changelog does
+          # not carry, and it threw MissingVersionException on every run. The fallback below
+          # swallowed it, so the job went green while the 1.0.0 draft was created with an empty
+          # body -- a release with no notes, and nothing saying so.
+          #
+          # The fallback stays (an unpublishable draft beats a failed build mid-release), but it is
+          # now loud: ::warning:: surfaces on the run's summary instead of hiding in the log.
+          if ! ./gradlew getChangelog --no-header --quiet --console=plain --output-file="$RELEASE_NOTE"; then
+            echo "::warning::could not read release notes from CHANGELOG.md -- the draft body will be empty"
+            : > "$RELEASE_NOTE"
+          fi
 
           gh release create $VERSION \
             --draft \
