@@ -1,7 +1,22 @@
-# TypeWriter
+# ![](src/main/resources/META-INF/pluginIcon.svg) TypeWriter
+
+[![Build](https://github.com/asm0dey/typewriter-plugin/actions/workflows/build.yml/badge.svg)](https://github.com/asm0dey/typewriter-plugin/actions/workflows/build.yml)
+[![Version](https://img.shields.io/jetbrains/plugin/v/20245.svg)](https://plugins.jetbrains.com/plugin/20245)
+[![Downloads](https://img.shields.io/jetbrains/plugin/d/20245.svg)](https://plugins.jetbrains.com/plugin/20245)
 
 Types predefined snippets into a JetBrains IDE the way a person would, for live
 demos and screencasts.
+
+## Installation
+
+<kbd>Settings</kbd> > <kbd>Plugins</kbd> > <kbd>Marketplace</kbd> > search for
+**TypeWriter** > <kbd>Install</kbd>, or get it from the
+[plugin page](https://plugins.jetbrains.com/plugin/20245).
+
+Version 1.0.0 is a full rewrite. Snippets are now ordinary files you edit in the
+IDE rather than text pasted into a dialog, so they keep their own syntax
+highlighting, completion and formatting — see [Directories](#directories). It
+requires 2025.2 or newer; earlier IDEs keep the last 0.2.x release.
 
 ## Quick start
 
