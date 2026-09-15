@@ -4,6 +4,20 @@
     <vendor>asm0dey</vendor>
     <depends>com.intellij.modules.platform</depends>
 
+    <description><![CDATA[
+<p>Types predefined snippets into the editor the way a person would, for live demos and screencasts.</p>
+<ul>
+  <li>A snippet is a file. Edit it in a real editor tab, with real highlighting.</li>
+  <li>Output is exactly what the file says, in any language the IDE supports.</li>
+  <li>Markers are comments starting with <code>tw:</code>, so snippet files stay valid:
+      <code>// tw: pause 800</code>, <code>// tw: action ReformatCode</code>.</li>
+  <li>One action per snippet, bound in Settings &gt; Keymap like any other action.</li>
+  <li><b>Type Next</b> walks a talk from a single binding.</li>
+</ul>
+<p><b>Upgrading from 0.x:</b> snippets are no longer stored in plugin settings and are not migrated.
+Recreate them as files in your snippet directory.</p>
+]]></description>
+
     <extensions defaultExtensionNs="com.intellij">
         <notificationGroup id="TypeWriter" displayType="BALLOON"/>
         <postStartupActivity implementation="com.github.asm0dey.typewriter.library.SnippetStartupActivity"/>
@@ -11,6 +25,10 @@
             implementation="com.github.asm0dey.typewriter.ide.SnippetHighlightingSettingProvider"/>
         <completion.contributor language="any"
             implementationClass="com.github.asm0dey.typewriter.ide.MarkerCompletionContributor"/>
+        <applicationConfigurable parentId="tools"
+                                 instance="com.github.asm0dey.typewriter.ui.TypeWriterConfigurable"
+                                 id="typewriter.settings"
+                                 displayName="TypeWriter"/>
     </extensions>
 
     <applicationListeners>
