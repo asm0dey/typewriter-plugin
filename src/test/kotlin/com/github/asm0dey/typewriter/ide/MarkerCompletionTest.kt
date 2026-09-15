@@ -3,6 +3,7 @@ package com.github.asm0dey.typewriter.ide
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
 import com.intellij.codeInsight.lookup.LookupElementPresentation
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.junit5.RunInEdt
 import java.nio.file.Files
@@ -129,6 +130,15 @@ class MarkerCompletionTest : TypeWriterFixtureTestCase() {
         pointProjectAt(dir)
 
         openRealFile(dir, "01.java", "// tw: action <caret>")
+
+        // Raise the lookup's variant limit for this test. The platform guarantees only the 500
+        // most relevant items reach the caller and prints a warning saying so, and with ~2750
+        // registered action ids that truncation decides WHICH ids come back -- so the assertions
+        // below ("at least one carries an icon / type text") would depend on how the platform
+        // happened to rank an arbitrary 500 that run. Lifting the cap makes this test read the
+        // whole candidate list and removes that source of flakiness; it is the platform's own
+        // second suggestion in that warning. Scoped to testRootDisposable, so it is restored.
+        Registry.get("ide.completion.variant.limit").setValue(10_000, fixture.testRootDisposable)
 
         val elements = fixture.completeBasic() ?: emptyArray()
         assertTrue(elements.isNotEmpty(), "expected action id completions to be offered")

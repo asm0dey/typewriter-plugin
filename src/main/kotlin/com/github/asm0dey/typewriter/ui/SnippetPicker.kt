@@ -119,5 +119,5 @@ internal fun openSnippetDialog(project: Project, snippet: Snippet) {
         SnippetRunner.notify(project, "${snippet.relativePath} has no readable text", NotificationType.ERROR)
         return
     }
-    SnippetDialog(project, snippet).show()
+    SnippetDialog.forExisting(project, snippet).show()
 }

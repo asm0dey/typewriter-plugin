@@ -213,6 +213,31 @@ object SnippetFileNames {
     }
 
     /**
+     * A relative path under [directory] that is guaranteed not to exist yet: `NN-snippet` plus
+     * whatever [relativePath] makes of it for [fileType], where NN starts one past the highest
+     * numeric prefix already there and counts up until the path is free.
+     *
+     * The numeric prefix IS the sequence order (spec section 8, "Sequence": snippets sort by
+     * relative path), so a new snippet lands at the end of the talk -- where one being written
+     * almost always belongs. Generating the name instead of asking for it is what keeps a new
+     * snippet from ever colliding with an existing file: the speaker renames it afterwards if
+     * they care, by which point they have seen what they wrote.
+     */
+    fun workingRelativePath(directory: VirtualFile?, fileType: FileType): String {
+        val highest = directory?.children.orEmpty()
+            .mapNotNull { Regex("^(\\d+)-").find(it.name)?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull() ?: 0
+        var n = highest + 1
+        while (true) {
+            val candidate = relativePath(fileType, "%02d-snippet".format(n))
+            val taken = directory != null &&
+                VfsUtil.findRelativeFile(directory, *candidate.split('/').toTypedArray()) != null
+            if (!taken) return candidate
+            n++
+        }
+    }
+
+    /**
      * The snippet-directory-relative path to create for [fileType] named from [stem] (spec
      * question 23).
      *
@@ -250,57 +275,6 @@ object SnippetFileNames {
     }
 }
 
-/**
- * Name + file-type chooser for creating a new snippet (spec section 9, "New snippet"; spec
- * question 23). The combo's selection is authoritative for the resulting file's extension (or, for
- * an exact-only type, its exact name) -- see [SnippetFileNames.relativePath] -- so there is no
- * separate language field, and the name field is always required: it is either the extension
- * prefix or the directory name, never optional.
- *
- * The combo shows [SnippetFileNames.label] for every entry (not a bare [FileType], whose default
- * `toString()` is unreadable Java object noise), opens preselected on [SnippetFileNames.preselected]
- * for the currently open file, and carries a [ComboboxSpeedSearch] over the same label so any of
- * the 100+ registered types is reachable by typing a few letters, without needing to reorder --
- * and thereby make less predictable -- the otherwise fully alphabetical, unfiltered list spec
- * section 9 requires.
- */
-class NewSnippetDialog(project: Project) : DialogWrapper(project) {
-
-    private val stemField = JBTextField("01-snippet")
-    private val choices = SnippetFileNames.choices()
-    private val typeCombo = ComboBox(DefaultComboBoxModel(choices.toTypedArray())).apply {
-        renderer = SimpleListCellRenderer.create("") { SnippetFileNames.label(it) }
-        val currentFileType = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.fileType
-        selectedItem = SnippetFileNames.preselected(choices, currentFileType)
-        ComboboxSpeedSearch.installSpeedSearch(this) { SnippetFileNames.label(it) }
-    }
-
-    init {
-        title = "New TypeWriter Snippet"
-        init()
-    }
-
-    val fileType: FileType get() = typeCombo.selectedItem as FileType
-    val fileName: String get() = SnippetFileNames.suggestName(fileType, stemField.text.trim())
-    val relativePath: String get() = SnippetFileNames.relativePath(fileType, stemField.text.trim())
-
-    override fun createCenterPanel(): JComponent =
-        FormBuilder.createFormBuilder()
-            .addLabeledComponent("Name:", stemField)
-            .addLabeledComponent("File type:", typeCombo)
-            .panel as JPanel
-
-    // A blank stem is now always invalid: it is either the extension prefix (extension-based
-    // types) or the directory name (exact-only types) -- relativePath() has no meaningful use for
-    // it either way. This used to exempt exact-name types, back when the stem was simply discarded
-    // for them; spec question 23 gave it a job, so the exemption no longer applies to anything.
-    override fun doValidate(): ValidationInfo? =
-        if (stemField.text.isBlank()) {
-            ValidationInfo("Name must not be empty", stemField)
-        } else {
-            null
-        }
-}
 
 /**
  * Entry point for spec section 9's "New snippet": shows [NewSnippetDialog], then hands its
@@ -312,15 +286,12 @@ class NewSnippetAction : AnAction(), DumbAware {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val dialog = NewSnippetDialog(project)
-        if (!dialog.showAndGet()) return
-        val created = create(project, dialog.relativePath) ?: return
-        // Creating a snippet continues straight into the editing dialog -- the same one Edit
-        // Snippet opens -- rather than dropping the speaker into a bare editor tab. The name/type
-        // dialog only decides where the file goes; authoring it (content, speed/jitter/newline,
-        // raw) happens in SnippetDialog, so New and Edit share one authoring surface.
-        SnippetDirs.all(project).firstOrNull { it.file == created }
-            ?.let { openSnippetDialog(project, it) }
+        // Straight to the authoring dialog -- no name prompt first. The speaker writes the
+        // snippet, picks its language from the dialog's own combo, and only on OK/Play is a file
+        // created, under a generated name that cannot collide (SnippetFileNames.workingRelativePath).
+        // Asking for a name up front meant naming a thing before writing it, and the suggested
+        // name collided with whatever was already there.
+        SnippetDialog.forNewSnippet(project).show()
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.github.asm0dey.typewriter.ui
 
 import com.github.asm0dey.typewriter.library.DirectiveSidecar
+import com.github.asm0dey.typewriter.library.SnippetDirs
 import com.github.asm0dey.typewriter.library.SnippetRunner
 import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
@@ -11,19 +12,27 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.keymap.KeymapManager
 import com.intellij.openapi.keymap.KeymapUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.ui.ValidationInfo
+import com.intellij.ui.ComboboxSpeedSearch
 import com.intellij.ui.EditorTextField
+import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.FormBuilder
 import java.awt.Dimension
 import java.awt.event.ActionEvent
+import java.io.IOException
 import javax.swing.AbstractAction
+import javax.swing.DefaultComboBoxModel
 import javax.swing.JComponent
 import javax.swing.JSpinner
 import javax.swing.SpinnerNumberModel
@@ -253,10 +262,59 @@ object DirectiveHeader {
  * has a live [Document] before constructing this dialog. A binary file has none; this class does
  * not itself handle that case.
  */
-class SnippetDialog(private val project: Project, private val snippet: Snippet) : DialogWrapper(project) {
+class SnippetDialog private constructor(
+    private val project: Project,
+    /**
+     * Null until the snippet exists on disk. A NEW snippet is authored entirely in memory and is
+     * only written on OK/Play ([materialise]), so everything keyed to a real file -- the sidecar
+     * store, the hotkey, Open in Editor, playback -- is absent until then and must be guarded.
+     */
+    private var snippet: Snippet?,
+    initialFileType: FileType,
+) : DialogWrapper(project) {
 
-    private val document: Document = FileDocumentManager.getInstance().getDocument(snippet.file)!!
-    private val editorField = EditorTextField(document, project, snippet.fileType, false, false).apply {
+    companion object {
+        /** Edit an existing snippet. Its file type is fixed; the language combo is not shown. */
+        fun forExisting(project: Project, snippet: Snippet) =
+            SnippetDialog(project, snippet, snippet.fileType)
+
+        /**
+         * Author a new snippet. Opens on an empty in-memory document with a language combo, and
+         * writes a file only when the speaker commits (OK or Play) -- see [materialise].
+         */
+        fun forNewSnippet(project: Project): SnippetDialog {
+            val current = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.fileType
+            val preselected = SnippetFileNames.preselected(SnippetFileNames.choices(), current)
+            return SnippetDialog(project, null, preselected)
+        }
+    }
+
+    private var fileType: FileType = initialFileType
+
+    /** The combo, in new mode only: an existing snippet's type is its file name's business. */
+    private val typeCombo: ComboBox<FileType>? = if (snippet != null) {
+        null
+    } else {
+        val choices = SnippetFileNames.choices()
+        ComboBox(DefaultComboBoxModel(choices.toTypedArray())).apply {
+            renderer = SimpleListCellRenderer.create("") { SnippetFileNames.label(it) }
+            selectedItem = initialFileType
+            ComboboxSpeedSearch.installSpeedSearch(this) { SnippetFileNames.label(it) }
+            addActionListener {
+                fileType = selectedItem as FileType
+                // Re-type the SAME document so nothing typed so far is lost: the language only
+                // decides highlighting here, and the file name it implies is not computed until
+                // materialise().
+                editorField.setNewDocumentAndFileType(fileType, document)
+            }
+        }
+    }
+
+    private var document: Document = snippet
+        ?.let { FileDocumentManager.getInstance().getDocument(it.file)!! }
+        ?: EditorFactory.getInstance().createDocument("")
+
+    private val editorField = EditorTextField(document, project, fileType, false, false).apply {
         preferredSize = Dimension(680, 360)
         // EditorTextField defaults to the Swing/LAF font (a proportional UI font, e.g. "Inter"),
         // overriding the editor colour scheme's own monospace font -- see setupEditorFont's
@@ -269,8 +327,12 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     }
     private val settings = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
 
-    /** Comment syntax for the snippet's own language -- see the class kdoc for what depends on it. */
-    private val syntax = CommentSyntax.of(LanguageUtil.getFileTypeLanguage(snippet.fileType) ?: Language.ANY)
+    /**
+     * Comment syntax for the snippet's own language -- see the class kdoc for what depends on it.
+     * Computed, not stored: in new mode the language combo can change it after construction, and
+     * it decides which store the timing goes to (header vs sidecar).
+     */
+    private val syntax get() = CommentSyntax.of(LanguageUtil.getFileTypeLanguage(fileType) ?: Language.ANY)
 
     /** The directives as the dialog read them when it opened, from whichever store [syntax]
      * selects -- see [DirectiveHeader.decideSave]. */
@@ -292,12 +354,13 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     private var playOnClose = false
 
     init {
-        title = "Snippet: ${snippet.relativePath}"
+        title = snippet?.let { "Snippet: ${it.relativePath}" } ?: "New TypeWriter Snippet"
         init()
     }
 
     override fun createCenterPanel(): JComponent =
         FormBuilder.createFormBuilder()
+            .let { if (typeCombo != null) it.addLabeledComponent("Language:", typeCombo) else it }
             .addComponent(editorField)
             .addLabeledComponent("Base delay (ms):", speed)
             .addLabeledComponent("Jitter (ms):", jitter)
@@ -310,19 +373,27 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     private fun currentDirectives(): Directives = if (syntax.hasAny) {
         DirectiveHeader.read(document.text, settings.state.sentinel)
     } else {
-        DirectiveSidecar.read(snippet.file)
+        // No file yet in new mode, so nothing is stored anywhere: the spinners start at the app
+        // defaults, exactly as they do for a snippet whose header carries no timing.
+        snippet?.let { DirectiveSidecar.read(it.file) } ?: Directives()
     }
 
     private fun hotkeyText(): String {
-        val shortcuts = KeymapManager.getInstance().activeKeymap.getShortcuts(snippet.id)
+        // A new snippet has no action id until it is written, so it has no hotkey to report yet.
+        val id = snippet?.id ?: return "unbound"
+        val shortcuts = KeymapManager.getInstance().activeKeymap.getShortcuts(id)
         return if (shortcuts.isEmpty()) "unbound" else KeymapUtil.getShortcutText(shortcuts.first())
     }
 
-    override fun createActions() = arrayOf(
-        object : AbstractAction("Open in Editor") {
-            override fun actionPerformed(e: ActionEvent?) {
-                FileEditorManager.getInstance(project).openFile(snippet.file, true)
-                close(CANCEL_EXIT_CODE)
+    // Open in Editor only exists once there is a file to open: in new mode nothing is written
+    // until OK/Play, so the button would have nothing to point at.
+    override fun createActions() = listOfNotNull(
+        snippet?.let { existing ->
+            object : AbstractAction("Open in Editor") {
+                override fun actionPerformed(e: ActionEvent?) {
+                    FileEditorManager.getInstance(project).openFile(existing.file, true)
+                    close(CANCEL_EXIT_CODE)
+                }
             }
         },
         object : AbstractAction("Play") {
@@ -333,9 +404,19 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
         },
         okAction,
         cancelAction,
-    )
+    ).toTypedArray()
+
+    // A new snippet with nothing in it would be written as an empty file that types nothing.
+    override fun doValidate(): ValidationInfo? = when {
+        snippet == null && document.text.isBlank() ->
+            ValidationInfo("Write something to type, or cancel", editorField)
+        else -> null
+    }
 
     override fun doOKAction() {
+        // New mode: this is the point the file comes into existence. If it cannot be written the
+        // dialog stays open with the speaker's text intact rather than closing and losing it.
+        if (snippet == null && !materialise()) return
         saveDirectives()
         super.doOKAction()
         if (playOnClose) {
@@ -343,7 +424,7 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
             // and the abort watcher cancels on any action (spec section 9, "Snippet dialog").
             ApplicationManager.getApplication().invokeLater {
                 val editor = FileEditorManager.getInstance(project).selectedTextEditor
-                SnippetRunner.run(project, editor, snippet)
+                snippet?.let { SnippetRunner.run(project, editor, it) }
             }
         }
     }
@@ -374,18 +455,63 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
                         WriteCommandAction.runWriteCommandAction(project) { document.setText(updated) }
                     }
                 }
-                DirectiveHeader.Store.SIDECAR -> DirectiveSidecar.write(snippet.file, decision.toWrite)
+                DirectiveHeader.Store.SIDECAR ->
+                    snippet?.let { DirectiveSidecar.write(it.file, decision.toWrite) }
             }
         }
 
         if (decision.conflicted) {
             SnippetRunner.notify(
                 project,
-                "${snippet.relativePath}: a timing field's stored value changed while this dialog " +
+                "${snippet?.relativePath}: a timing field's stored value changed while this dialog " +
                     "was open, and also changed here -- kept the stored value",
                 NotificationType.WARNING,
             )
         }
         FileDocumentManager.getInstance().saveDocument(document)
+    }
+
+    /**
+     * Writes the in-memory snippet to disk under a generated, collision-free name and adopts it,
+     * so everything after this point (timing store, playback) works exactly as it does for a
+     * snippet that was opened rather than created.
+     *
+     * The name is generated rather than asked for ([SnippetFileNames.workingRelativePath]): the
+     * speaker has just written the thing, so naming it up front only produced a name that
+     * collided with whatever already sat in the directory. Rename afterwards if it matters.
+     *
+     * Returns false when the file could not be created -- [NewSnippetAction.create] has already
+     * reported why -- leaving the dialog open with the text still in it.
+     */
+    private fun materialise(): Boolean {
+        val text = document.text
+        val directory = try {
+            SnippetDirs.forNewSnippet(project)
+        } catch (ex: IOException) {
+            SnippetRunner.notify(
+                project,
+                "could not create the snippet directory: ${ex.message}",
+                NotificationType.ERROR,
+            )
+            return false
+        } ?: run {
+            SnippetRunner.notify(
+                project,
+                "no snippet directory configured; set one in Settings > Tools > TypeWriter",
+                NotificationType.ERROR,
+            )
+            return false
+        }
+
+        val relative = SnippetFileNames.workingRelativePath(directory, fileType)
+        val file = NewSnippetAction().create(project, relative) ?: return false
+        val fileDocument = FileDocumentManager.getInstance().getDocument(file) ?: return false
+        WriteCommandAction.runWriteCommandAction(project) { fileDocument.setText(text) }
+
+        // Rebind to the FILE's document: saveDirectives writes a header through it and then saves
+        // it, neither of which would reach disk through the in-memory scratch document.
+        document = fileDocument
+        snippet = SnippetDirs.all(project).firstOrNull { it.file == file }
+        return snippet != null
     }
 }

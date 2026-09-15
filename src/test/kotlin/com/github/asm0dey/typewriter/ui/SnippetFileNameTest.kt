@@ -373,4 +373,45 @@ class SnippetFileNameTest : TypeWriterFixtureTestCase() {
             parent.toFile().deleteRecursively()
         }
     }
+
+    // The collision the generated name exists to prevent: New Snippet used to suggest a fixed
+    // stem, which conflicted with whatever was already in the directory. workingRelativePath must
+    // step past every taken number, and land at the END of the sequence so a snippet being written
+    // is the next step of the talk.
+    @Test
+    fun testWorkingRelativePathSkipsNamesAlreadyTaken() {
+        val realDir = Files.createTempDirectory("tw-working-name")
+        val projectSettings = fixture.project.getService(TypeWriterProjectSettings::class.java)
+        val savedProjectDir = projectSettings.state.projectDir
+        try {
+            LocalFileSystem.getInstance().refreshAndFindFileByNioFile(realDir)
+            projectSettings.loadState(TypeWriterProjectSettings.State(projectDir = realDir.toString()))
+            val action = NewSnippetAction()
+
+            val dir = { SnippetDirs.project(fixture.project) }
+            assertEquals(
+                "01-snippet.java",
+                SnippetFileNames.workingRelativePath(dir(), JavaFileType.INSTANCE),
+                "an empty directory starts the sequence at 01",
+            )
+
+            assertNotNull(action.create(fixture.project, "01-snippet.java"))
+            assertEquals(
+                "02-snippet.java",
+                SnippetFileNames.workingRelativePath(dir(), JavaFileType.INSTANCE),
+                "01 is taken, so the next working name is 02 -- never a collision",
+            )
+
+            // A gap does not get filled: the prefix is sequence ORDER, so a new snippet goes last.
+            assertNotNull(action.create(fixture.project, "07-manual.java"))
+            assertEquals(
+                "08-snippet.java",
+                SnippetFileNames.workingRelativePath(dir(), JavaFileType.INSTANCE),
+                "the name continues past the highest prefix rather than filling the 03-06 gap",
+            )
+        } finally {
+            projectSettings.loadState(TypeWriterProjectSettings.State(projectDir = savedProjectDir))
+            realDir.toFile().deleteRecursively()
+        }
+    }
 }
