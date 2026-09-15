@@ -86,4 +86,16 @@ class SnippetLibraryTest : TypeWriterFixtureTestCase() {
         val snippet = SnippetLibrary.collect(null, local).single()
         assertEquals("// unsaved", SnippetLibrary.textOf(snippet))
     }
+
+    // The sidecar (DirectiveSidecar, resolved design question 22) is bookkeeping, not a snippet --
+    // without this exclusion it would register itself as a playable action with its own hotkey
+    // slot, which is exactly the kind of thing that looks fine in code and is obvious on screen.
+    @Test
+    fun testSidecarFileIsExcludedFromCollection() {
+        val local = dir("local6")
+        file(local, "01.txt", "hello")
+        file(local, DirectiveSidecar.FILE_NAME, "{}")
+        val paths = SnippetLibrary.collect(null, local).map { it.relativePath }
+        assertEquals(listOf("01.txt"), paths)
+    }
 }

@@ -1,5 +1,7 @@
 package com.github.asm0dey.typewriter.ui
 
+import com.github.asm0dey.typewriter.library.DirectiveSidecar
+import com.github.asm0dey.typewriter.library.SnippetDirs
 import com.github.asm0dey.typewriter.library.SnippetRunner
 import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
@@ -178,10 +180,17 @@ object DirectiveHeader {
  * Edit a snippet's text and its timing directives together (spec section 9, "Snippet dialog").
  * The [EditorTextField] is built over the snippet file's **existing** [Document] -- never a copy
  * -- so the dialog, any already-open editor tab on the same file, and the player all read the one
- * buffer. Cancel therefore does not revert typed text: only OK/Cancel governs the timing fields
- * (written to the directive header only on OK, and only per-field where the speaker's own edit
- * doesn't already win -- see [DirectiveHeader.resolveField]), matching the spec's explicit note
- * that the dialog edits the real buffer by design.
+ * buffer. Cancel therefore does not revert typed text: only OK/Cancel governs the timing fields.
+ *
+ * Where timing is written depends on [syntax] (resolved design question 22): a comment-capable
+ * snippet's timing lives in its own directive header, written on OK only per-field where the
+ * speaker's own header edit doesn't already win -- see [DirectiveHeader.resolveField]. A
+ * comment-less snippet (`!syntax.hasAny` -- no [com.intellij.lang.Commenter] for its language) has
+ * no header to hold it at all: `DirectiveHeader.write` is a no-op for exactly that case, so its
+ * timing instead lives in [DirectiveSidecar], a per-directory JSON file. The four timing controls
+ * work identically either way -- the same [DirectiveHeader.resolveField] decision, just reading
+ * and writing a different store -- and stay enabled in both cases; only `pause`/`action` markers
+ * are unavailable for a comment-less snippet, and this dialog never offered those regardless.
  *
  * Precondition: the caller ([EditSnippetAction]) has already verified [snippet.file][Snippet.file]
  * has a live [Document] before constructing this dialog. A binary file has none; this class does
@@ -203,27 +212,30 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     }
     private val settings = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
 
-    /** The directives as the dialog read them when it opened -- see [DirectiveHeader.resolveField]. */
-    private val openedDirectives = DirectiveHeader.read(document.text, settings.state.sentinel)
-
-    /** Comment syntax for the snippet's own language. See [createCenterPanel] and [saveDirectives]
-     * for what happens when it has none. */
+    /** Comment syntax for the snippet's own language -- see the class kdoc for what depends on it. */
     private val syntax = CommentSyntax.of(LanguageUtil.getFileTypeLanguage(snippet.fileType) ?: Language.ANY)
 
-    // The value each spinner is initialised to: the header's own value, or the app default when
-    // the header has none. Doubles as the baseline saveDirectives compares the live spinner
-    // against to tell whether the speaker actually touched it, since a JSpinner (unlike the
-    // header) cannot itself represent "unset".
+    /** The snippet's own directory (global or project, per [Snippet.fromProject]) -- the sidecar
+     * lives at its root. Only consulted when [syntax] has no comments; `null` when that directory
+     * can no longer be resolved (e.g. deleted out from under an already-open dialog). */
+    private val snippetDir = if (snippet.fromProject) SnippetDirs.project(project) else SnippetDirs.global()
+
+    /** The directives as the dialog read them when it opened, from whichever store [syntax]
+     * selects -- see [DirectiveHeader.resolveField]. */
+    private val openedDirectives = currentDirectives()
+
+    // The value each spinner is initialised to: the stored value, or the app default when there is
+    // none. Doubles as the baseline saveDirectives compares the live spinner against to tell
+    // whether the speaker actually touched it, since a JSpinner (unlike the header or the sidecar)
+    // cannot itself represent "unset".
     private val speedBaseline = openedDirectives.speedMs ?: settings.state.speedMs
     private val jitterBaseline = openedDirectives.jitterMs ?: settings.state.jitterMs
     private val newlineBaseline = openedDirectives.newlineMs ?: settings.state.newlineMs
 
-    private val speed = JSpinner(SpinnerNumberModel(speedBaseline, 0, 5000, 10)).apply { isEnabled = syntax.hasAny }
-    private val jitter = JSpinner(SpinnerNumberModel(jitterBaseline, 0, 5000, 5)).apply { isEnabled = syntax.hasAny }
-    private val newline = JSpinner(SpinnerNumberModel(newlineBaseline, 0, 5000, 50)).apply {
-        isEnabled = syntax.hasAny
-    }
-    private val raw = JBCheckBox("Type as authored (raw)", openedDirectives.raw).apply { isEnabled = syntax.hasAny }
+    private val speed = JSpinner(SpinnerNumberModel(speedBaseline, 0, 5000, 10))
+    private val jitter = JSpinner(SpinnerNumberModel(jitterBaseline, 0, 5000, 5))
+    private val newline = JSpinner(SpinnerNumberModel(newlineBaseline, 0, 5000, 50))
+    private val raw = JBCheckBox("Type as authored (raw)", openedDirectives.raw)
 
     private var playOnClose = false
 
@@ -232,22 +244,21 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
         init()
     }
 
-    override fun createCenterPanel(): JComponent {
-        val builder = FormBuilder.createFormBuilder()
+    override fun createCenterPanel(): JComponent =
+        FormBuilder.createFormBuilder()
             .addComponent(editorField)
             .addLabeledComponent("Base delay (ms):", speed)
             .addLabeledComponent("Jitter (ms):", jitter)
             .addLabeledComponent("Newline pause (ms):", newline)
             .addComponent(raw)
-        // No comment syntax means write() can never install a header (see its kdoc) -- the
-        // controls above are disabled for exactly that reason; this explains why, rather than
-        // leaving the speaker to wonder why they don't respond.
-        if (!syntax.hasAny) {
-            builder.addComponent(JBLabel("This file type has no comment syntax -- timing directives are unavailable."))
-        }
-        return builder
             .addComponent(JBLabel("Hotkey: ${hotkeyText()} — change it in Settings > Keymap"))
             .panel
+
+    /** The directives currently stored for this snippet, from whichever store [syntax] selects. */
+    private fun currentDirectives(): Directives = if (syntax.hasAny) {
+        DirectiveHeader.read(document.text, settings.state.sentinel)
+    } else {
+        snippetDir?.let { DirectiveSidecar.directivesFor(it, snippet.relativePath) } ?: Directives()
     }
 
     private fun hotkeyText(): String {
@@ -287,44 +298,37 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
 
     /**
      * Resolves each of the four directive fields independently via [DirectiveHeader.resolveField]
-     * -- never writing the controls' values over a header the speaker edited directly, and never
-     * writing an absent field's app-default fallback into a header that never had it -- then
-     * writes the combined result only if it actually differs from what the header currently holds
-     * (so an unmodified dialog never rewrites -- and thereby cosmetically reformats -- a header
-     * nothing about this OK changed).
+     * -- never writing the controls' values over a stored value the speaker changed directly
+     * (header text, or -- for a comment-less snippet -- the sidecar), and never writing an absent
+     * field's app-default fallback into storage that never had it -- then writes the combined
+     * result to whichever store [syntax] selects, only if it actually differs from what is
+     * currently stored (so an unmodified dialog never triggers a rewrite -- and, for the header,
+     * thereby a cosmetic reformat -- of something nothing about this OK changed).
      */
     private fun saveDirectives() {
-        if (!syntax.hasAny) {
-            // Nothing to resolve: the controls are disabled and write() is a no-op for this
-            // syntax regardless (see its kdoc).
-            FileDocumentManager.getInstance().saveDocument(document)
-            return
-        }
-
-        val sentinel = settings.state.sentinel
-        val currentDirectives = DirectiveHeader.read(document.text, sentinel)
+        val current = currentDirectives()
 
         val rawOutcome = DirectiveHeader.resolveField(
             opened = openedDirectives.raw,
-            current = currentDirectives.raw,
+            current = current.raw,
             controlChanged = raw.isSelected != openedDirectives.raw,
             controlValue = raw.isSelected,
         )
         val speedOutcome = DirectiveHeader.resolveField(
             opened = openedDirectives.speedMs,
-            current = currentDirectives.speedMs,
+            current = current.speedMs,
             controlChanged = (speed.value as Int) != speedBaseline,
             controlValue = speed.value as Int,
         )
         val jitterOutcome = DirectiveHeader.resolveField(
             opened = openedDirectives.jitterMs,
-            current = currentDirectives.jitterMs,
+            current = current.jitterMs,
             controlChanged = (jitter.value as Int) != jitterBaseline,
             controlValue = jitter.value as Int,
         )
         val newlineOutcome = DirectiveHeader.resolveField(
             opened = openedDirectives.newlineMs,
-            current = currentDirectives.newlineMs,
+            current = current.newlineMs,
             controlChanged = (newline.value as Int) != newlineBaseline,
             controlValue = newline.value as Int,
         )
@@ -335,22 +339,31 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
             jitterMs = jitterOutcome.value,
             newlineMs = newlineOutcome.value,
         )
-        // Only write when something actually needs to change -- otherwise write() would still
-        // regenerate a canonically-formatted header line even when every field resolved to
-        // "unchanged", cosmetically rewriting a header the speaker authored with different
-        // spacing or token order.
-        if (resolved != currentDirectives) {
-            val updated = DirectiveHeader.write(document.text, resolved, sentinel, syntax)
-            if (updated != document.text) {
-                WriteCommandAction.runWriteCommandAction(project) { document.setText(updated) }
+        if (resolved != current) {
+            if (syntax.hasAny) {
+                val updated = DirectiveHeader.write(document.text, resolved, settings.state.sentinel, syntax)
+                if (updated != document.text) {
+                    WriteCommandAction.runWriteCommandAction(project) { document.setText(updated) }
+                }
+            } else {
+                val dir = snippetDir
+                if (dir == null) {
+                    SnippetRunner.notify(
+                        project,
+                        "${snippet.relativePath}: could not locate its snippet directory -- timing changes were not saved",
+                        NotificationType.WARNING,
+                    )
+                } else {
+                    DirectiveSidecar.write(dir, snippet.relativePath, resolved)
+                }
             }
         }
 
         if (listOf(rawOutcome, speedOutcome, jitterOutcome, newlineOutcome).any { it.conflicted }) {
             SnippetRunner.notify(
                 project,
-                "${snippet.relativePath}: a timing field was edited directly in the header and " +
-                    "also changed in this dialog -- kept the header's edited value",
+                "${snippet.relativePath}: a timing field's stored value changed while this dialog " +
+                    "was open, and also changed here -- kept the stored value",
                 NotificationType.WARNING,
             )
         }
