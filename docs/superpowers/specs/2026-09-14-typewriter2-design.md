@@ -323,8 +323,18 @@ result = for each line of the ORIGINAL:
              non-blank -> the next non-blank line of the FORMATTED text
 ```
 
-If the two non-blank line counts differ — line wrapping split a long line — fall
-back to verbatim and warn.
+If the two non-blank line counts differ — line wrapping split a long line — retry
+with an **indentation-only** pass (`CodeStyleManager.adjustLineIndent` per line,
+bottom-up) and warn only if that also fails.
+
+> **Amended.** This previously fell back to verbatim immediately, which threw away
+> every indentation fix in the snippet because of one line the formatter wanted to
+> split. Reported against an XML snippet whose root element sat under 28 spaces and
+> stayed there, since an unrelated `</b><c>` elsewhere could not be reconciled.
+> `adjustLineIndent` re-indents each line where it stands and cannot reflow, so it is
+> structurally incapable of the split that got the first attempt rejected — the net
+> rule below is preserved, not weakened. Both guards are re-run on its output rather
+> than assumed.
 
 Net rule, and the one to state in user-facing docs: **the format step fixes
 indentation and spacing; it never changes the number of lines or their order.**

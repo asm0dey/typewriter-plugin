@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.format
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.ide.highlighter.XmlFileType
 import com.intellij.testFramework.junit5.RunInEdt
 import org.intellij.lang.annotations.Language
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -15,6 +16,42 @@ class SnippetFormatterTest : TypeWriterFixtureTestCase() {
 
     private fun format(text: String) =
         SnippetFormatter.format(fixture.project, JavaFileType.INSTANCE, "S.java", text)
+
+    // Reported from a real session: an XML snippet whose root element sat under 28 spaces came out
+    // exactly as authored. The full reformat wanted to split `</b><c>` onto two lines, which spec
+    // section 6 forbids, and the whole result -- every indentation fix in the file with it -- was
+    // discarded. The indent-only fallback fixes each line where it stands, so the root element
+    // reaches column 0 without anything being reflowed.
+    @Test
+    fun testIndentsWhenAFullReformatWouldSplitALine() {
+        val xml = listOf(
+            "<?xml version=\"1.0\" encoding=\"EUC-JP\" ?>",
+            "                            <a>",
+            "    <b><![CDATA[",
+            "        Or fix",
+            "broken",
+            "            Formatting!",
+            "]]></b><c>Automatically!</c>",
+            "                        </a>",
+        ).joinToString("\n")
+
+        val out = SnippetFormatter.format(fixture.project, XmlFileType.INSTANCE, "s.xml", xml)
+
+        assertNull(out.warning, "an indentable snippet must not fall back to verbatim")
+        val lines = out.text.lines()
+        assertEquals(xml.lines().size, lines.size, "the line count must not change")
+        assertEquals("<a>", lines[1], "the root element must reach column 0")
+        assertEquals("</a>", lines[7], "the closing tag must reach column 0")
+        assertTrue(
+            lines[6].startsWith("]]></b><c>"),
+            "the line the full reformat wanted to split must stay one line, was \"${lines[6]}\"",
+        )
+        assertEquals(
+            xml.substringAfter("CDATA[").substringBefore("]]>"),
+            out.text.substringAfter("CDATA[").substringBefore("]]>"),
+            "CDATA is character data -- its whitespace must survive untouched",
+        )
+    }
 
     @Test
     fun testFixesIndentation() {
