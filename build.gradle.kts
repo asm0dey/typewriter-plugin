@@ -77,7 +77,7 @@ intellijPlatform {
             // picked up automatically and .github/workflows/build.yml's cache key follows them
             // (it hashes printProductsReleases' output, not this file).
             //
-            // The floor tracks sinceBuild in gradle.properties -- change one and change the other.
+            // The floor tracks ideaVersion.sinceBuild above -- change one and change the other.
             // The ceiling is bumped by hand when this plugin starts targeting a newer IDE; leaving
             // it is a deliberate, visible decision rather than silent drift back to five IDEs.
             select {
