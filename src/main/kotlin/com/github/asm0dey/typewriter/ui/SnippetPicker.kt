@@ -16,6 +16,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.IPopupChooserBuilder
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.components.JBList
+import java.awt.Component
 import javax.swing.JList
 
 /**
@@ -30,6 +31,14 @@ private fun snippetPopup(project: Project, title: String): IPopupChooserBuilder<
         SnippetRunner.notify(project, "no snippets found", NotificationType.WARNING)
         return null
     }
+    // The snippet Type Next would play, so the picker answers "where am I in the talk?" -- the
+    // question a speaker has exactly when a demo has gone sideways and they have opened this
+    // popup to recover. Null when the cursor points outside the project sequence (a global-only
+    // library, or an empty project directory), in which case nothing is marked.
+    val next = SnippetLibrary.sequence(SnippetDirs.project(project))
+        .getOrNull(project.getService(RunService::class.java).cursor)
+        ?.relativePath
+
     return JBPopupFactory.getInstance()
         .createPopupChooserBuilder(snippets)
         .setTitle(title)
@@ -38,9 +47,18 @@ private fun snippetPopup(project: Project, title: String): IPopupChooserBuilder<
             override fun getListCellRendererComponent(
                 list: JList<*>, value: Any?, index: Int,
                 selected: Boolean, focused: Boolean,
-            ) = super.getListCellRendererComponent(
-                list, (value as? Snippet)?.relativePath ?: value, index, selected, focused,
-            )
+            ): Component {
+                val snippet = value as? Snippet
+                // Marked by appending rather than prefixing: setNamerForFiltering filters on the
+                // bare relativePath, so a leading marker would not shift what the speaker types to
+                // find a row, but it WOULD misalign every other row in the list.
+                val label = when {
+                    snippet == null -> value
+                    snippet.relativePath == next -> "${snippet.relativePath}  ← next"
+                    else -> snippet.relativePath
+                }
+                return super.getListCellRendererComponent(list, label, index, selected, focused)
+            }
         })
 }
 

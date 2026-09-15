@@ -226,6 +226,32 @@ class TypeSnippetAction(private val relativePath: String) : AnAction("Type: $rel
  * (spec section 8). An empty sequence is reported and nothing plays.
  */
 private object SequenceRunner {
+
+    /**
+     * Names the snippet this action would type, in its own menu text: "Type Next" becomes
+     * "Type Next: 02-entity.java (2 of 7)".
+     *
+     * The sequence cursor is in-memory state with nothing rendering it, so there was no way to
+     * answer "which one will it type?" short of playing it and finding out -- during a talk, in
+     * front of an audience. The action's own presentation is the one place that costs the speaker
+     * nothing to check and cannot appear on a screencast: menus and Find Action show it, the
+     * editor does not.
+     *
+     * Deliberately NOT a notification. A balloon is precisely what must not pop up mid-demo, which
+     * is the moment this information is wanted.
+     *
+     * [indexOf] receives the [RunService] so each action can describe its OWN target -- Type
+     * Previous points two back, matching [playAt]'s arithmetic rather than duplicating it.
+     */
+    fun describe(e: AnActionEvent, indexOf: (RunService) -> Int) {
+        val project = e.project ?: return
+        val sequence = SnippetLibrary.sequence(SnippetDirs.project(project))
+        val base = e.presentation.text?.substringBefore(':') ?: return
+        val index = indexOf(project.getService(RunService::class.java))
+        e.presentation.isEnabled = sequence.isNotEmpty()
+        e.presentation.text = sequenceLabel(base, sequence.map { it.relativePath }, index)
+    }
+
     fun playAt(e: AnActionEvent, index: Int) {
         val project = e.project ?: return
         val sequence = SnippetLibrary.sequence(SnippetDirs.project(project))
@@ -242,6 +268,7 @@ private object SequenceRunner {
 
 class TypeNextAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+    override fun update(e: AnActionEvent) = SequenceRunner.describe(e) { it.cursor }
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         SequenceRunner.playAt(e, project.getService(RunService::class.java).cursor)
@@ -250,6 +277,7 @@ class TypeNextAction : AnAction(), DumbAware {
 
 class TypePreviousAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+    override fun update(e: AnActionEvent) = SequenceRunner.describe(e) { it.cursor - 2 }
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         SequenceRunner.playAt(e, project.getService(RunService::class.java).cursor - 2)
@@ -266,4 +294,18 @@ class UndoRunAction : AnAction(), DumbAware {
     override fun actionPerformed(e: AnActionEvent) {
         e.project?.getService(RunService::class.java)?.undoLastRun()
     }
+}
+
+/**
+ * The menu text for a sequence action: `"Type Next: 02-entity.java (2 of 7)"`, or a plain
+ * explanation when there is no sequence to walk.
+ *
+ * Pure, and separated from [AnActionEvent] for that reason: the clamping is the part worth
+ * testing and it has to agree with `SequenceRunner.playAt`'s own clamp, or the menu would promise
+ * one snippet and play another at either end of the sequence.
+ */
+internal fun sequenceLabel(base: String, relativePaths: List<String>, index: Int): String {
+    if (relativePaths.isEmpty()) return "$base (no snippets in the project directory)"
+    val clamped = index.coerceIn(0, relativePaths.size - 1)
+    return "$base: ${relativePaths[clamped]} (${clamped + 1} of ${relativePaths.size})"
 }

@@ -97,6 +97,18 @@ these snippets — there is no marker to carry them.
 ## Driving a talk
 
 Name your project snippets `01-`, `02-` and bind `TypeWriter: Type Next` once.
+`TypeWriter: Type Next` walks the **talk sequence**: the snippets in the project
+directory only, in relative-path order — which is what the `01-`/`02-` prefixes are
+for. It types the snippet at the cursor and advances; `Type Previous` steps back.
+Both clamp at the ends rather than wrapping, so a mis-hit at the end cannot silently
+restart the demo from step 1, and the cursor resets when the IDE restarts.
+
+To see which snippet is next, read the action's own text — it names it, e.g.
+`TypeWriter: Type Next: 02-entity.java (2 of 7)` — or open `TypeWriter: Type
+Snippet...`, where the next snippet is marked `← next`. Picking any sequence snippet
+there moves the cursor to the one after it, which is the recovery path when a demo
+goes sideways.
+
 Project snippets (`<project>/.typewriter`) are the talk; global snippets
 (`<JetBrains shared data>/typewriter`) are your reusable toolkit and are not part of
 the sequence.
