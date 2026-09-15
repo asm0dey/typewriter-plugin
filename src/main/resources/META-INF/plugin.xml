@@ -19,7 +19,8 @@ Recreate them as files in your snippet directory.</p>
 ]]></description>
 
     <extensions defaultExtensionNs="com.intellij">
-        <notificationGroup id="TypeWriter" displayType="BALLOON"/>
+        <notificationGroup id="TypeWriter" displayType="BALLOON"
+                           bundle="messages.TypeWriterBundle" key="notification.group.typewriter"/>
         <postStartupActivity implementation="com.github.asm0dey.typewriter.library.SnippetStartupActivity"/>
         <defaultHighlightingSettingProvider
             implementation="com.github.asm0dey.typewriter.ide.SnippetHighlightingSettingProvider"/>
@@ -28,11 +29,11 @@ Recreate them as files in your snippet directory.</p>
         <applicationConfigurable parentId="tools"
                                  instance="com.github.asm0dey.typewriter.ui.TypeWriterConfigurable"
                                  id="typewriter.settings"
-                                 displayName="TypeWriter"/>
+                                 bundle="messages.TypeWriterBundle" key="settings.displayName"/>
         <projectConfigurable parentId="typewriter.settings"
                              instance="com.github.asm0dey.typewriter.ui.TypeWriterProjectConfigurable"
                              id="typewriter.settings.project"
-                             displayName="Project"/>
+                             bundle="messages.TypeWriterBundle" key="settings.project.displayName"/>
     </extensions>
 
     <applicationListeners>
@@ -40,19 +41,13 @@ Recreate them as files in your snippet directory.</p>
                   topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
     </applicationListeners>
 
-    <actions>
-        <group id="typewriter.snippets" text="TypeWriter" popup="true"/>
-        <action id="typewriter.newSnippet" class="com.github.asm0dey.typewriter.ui.NewSnippetAction"
-                text="TypeWriter: New Snippet..."/>
-        <action id="typewriter.typeNext" class="com.github.asm0dey.typewriter.library.TypeNextAction"
-                text="TypeWriter: Type Next"/>
-        <action id="typewriter.typePrevious" class="com.github.asm0dey.typewriter.library.TypePreviousAction"
-                text="TypeWriter: Type Previous"/>
-        <action id="typewriter.undoRun" class="com.github.asm0dey.typewriter.library.UndoRunAction"
-                text="TypeWriter: Undo Run"/>
-        <action id="typewriter.typeSnippet" class="com.github.asm0dey.typewriter.ui.TypeSnippetPickerAction"
-                text="TypeWriter: Type Snippet..."/>
-        <action id="typewriter.editSnippet" class="com.github.asm0dey.typewriter.ui.EditSnippetAction"
-                text="TypeWriter: Edit Snippet..."/>
+    <actions resource-bundle="messages.TypeWriterBundle">
+        <group id="typewriter.snippets" popup="true"/>
+        <action id="typewriter.newSnippet" class="com.github.asm0dey.typewriter.ui.NewSnippetAction"/>
+        <action id="typewriter.typeNext" class="com.github.asm0dey.typewriter.library.TypeNextAction"/>
+        <action id="typewriter.typePrevious" class="com.github.asm0dey.typewriter.library.TypePreviousAction"/>
+        <action id="typewriter.undoRun" class="com.github.asm0dey.typewriter.library.UndoRunAction"/>
+        <action id="typewriter.typeSnippet" class="com.github.asm0dey.typewriter.ui.TypeSnippetPickerAction"/>
+        <action id="typewriter.editSnippet" class="com.github.asm0dey.typewriter.ui.EditSnippetAction"/>
     </actions>
 </idea-plugin>
