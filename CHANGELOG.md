@@ -1,5 +1,15 @@
 # TypeWriter Changelog
 
+## 1.0.1
+
+### Fixed
+
+- A snippet whose formatting would move content across lines is now indented rather
+  than typed exactly as authored. One line the formatter wanted to split used to
+  discard every indentation fix in the whole snippet — an XML file's root element
+  stayed under the 28 spaces it was authored with. Lines are still never split,
+  reordered, or added: the retry only re-indents each line where it stands.
+
 ## 1.0.0
 
 Complete rewrite.
