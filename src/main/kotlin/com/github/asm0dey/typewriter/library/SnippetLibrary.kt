@@ -44,15 +44,17 @@ object SnippetLibrary {
     /**
      * Collects every non-directory file under [root], recursively, via the platform's sanctioned
      * VFS walk (rather than a hand-rolled recursion over [VirtualFile.getChildren]) -- excluding
-     * [DirectiveSidecar.FILE_NAME] by exact name. The sidecar is bookkeeping for comment-less
-     * snippets' timing (spec section 9, resolved design question 22), not a snippet itself; without
-     * this exclusion it would register itself as a playable action with its own hotkey slot.
+     * any file whose name ends with [DirectiveSidecar.SUFFIX]. The sidecar is bookkeeping for a
+     * comment-less snippet's timing (spec section 9, resolved design question 22), co-located next
+     * to the snippet it belongs to, not a snippet itself; without this exclusion it would register
+     * itself as a playable action with its own hotkey slot. By extension rather than an exact,
+     * root-only name: a sidecar lives beside its own snippet at any nesting depth.
      */
     private fun walk(root: VirtualFile, fromProject: Boolean): List<Snippet> {
         val snippets = mutableListOf<Snippet>()
         VfsUtilCore.visitChildrenRecursively(root, object : VirtualFileVisitor<Unit>() {
             override fun visitFile(file: VirtualFile): Boolean {
-                if (!file.isDirectory && file.name != DirectiveSidecar.FILE_NAME) {
+                if (!file.isDirectory && !file.name.endsWith(DirectiveSidecar.SUFFIX)) {
                     // file is always a descendant of root -- visitChildrenRecursively only ever
                     // reaches this callback for files under the root it was given -- so
                     // getRelativePath can never return null here.

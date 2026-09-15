@@ -94,8 +94,20 @@ class SnippetLibraryTest : TypeWriterFixtureTestCase() {
     fun testSidecarFileIsExcludedFromCollection() {
         val local = dir("local6")
         file(local, "01.txt", "hello")
-        file(local, DirectiveSidecar.FILE_NAME, "{}")
+        file(local, "01.txt${DirectiveSidecar.SUFFIX}", "speed=90")
         val paths = SnippetLibrary.collect(null, local).map { it.relativePath }
         assertEquals(listOf("01.txt"), paths)
+    }
+
+    // Excluded by extension, not by an exact, root-only filename: a sidecar is co-located with
+    // its own snippet (spec section 9, resolved design question 22), so one nested in a
+    // subdirectory must be excluded exactly like one at the directory's root.
+    @Test
+    fun testSidecarFileIsExcludedFromCollectionEvenInASubdirectory() {
+        val local = dir("local7")
+        file(local, "jcon26/01.txt", "hello")
+        file(local, "jcon26/01.txt${DirectiveSidecar.SUFFIX}", "speed=90")
+        val paths = SnippetLibrary.collect(null, local).map { it.relativePath }
+        assertEquals(listOf("jcon26/01.txt"), paths)
     }
 }

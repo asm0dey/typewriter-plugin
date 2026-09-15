@@ -1,6 +1,7 @@
 package com.github.asm0dey.typewriter.library
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
+import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.run.RunService
 import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
@@ -10,6 +11,8 @@ import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.impl.SimpleDataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.WriteAction
+import com.intellij.openapi.fileTypes.FileType
+import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.TestActionEvent
@@ -61,9 +64,9 @@ class SnippetRunnerTest : TypeWriterFixtureTestCase() {
         }
     }
 
-    private fun snippet(dir: VirtualFile, name: String, text: String): Snippet {
+    private fun snippet(dir: VirtualFile, name: String, text: String, fileType: FileType = JavaFileType.INSTANCE): Snippet {
         val vf = writeSnippetFile(dir, name, text)
-        return Snippet(SnippetLibrary.actionId(name), name, vf, JavaFileType.INSTANCE, true)
+        return Snippet(SnippetLibrary.actionId(name), name, vf, fileType, true)
     }
 
     private fun appSettings() = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
@@ -199,6 +202,38 @@ class SnippetRunnerTest : TypeWriterFixtureTestCase() {
             waitForIdle(svc)
 
             assertEquals(formatted, fixture.editor.document.text)
+        }
+    }
+
+    // Spec section 9, resolved design question 22: a comment-less snippet's timing lives in its
+    // own .twmeta sidecar, since MarkerScanner returns no markers for such a snippet (no comment
+    // syntax to recognise a PsiComment in) and program.directives is therefore always Directives().
+    // Without SnippetRunner.run actually consulting DirectiveSidecar, playback would silently fall
+    // back to the global default regardless of what the sidecar -- and the dialog -- say. Proven
+    // here by making the two disagree sharply: the global default is slow (50ms/char), the sidecar
+    // says instant (0ms) -- if the sidecar were not consulted, this run would still be typing well
+    // past the short timeout below.
+    @Test
+    fun testSidecarTimingReachesThePlayerForACommentLessSnippet() {
+        configureTarget("<caret>")
+        val settings = appSettings()
+        val savedGlobal = settings.state
+        settings.loadState(savedGlobal.copy(speedMs = 50, jitterMs = 0, newlineMs = 0))
+        try {
+            val dir = tempDir("sidecar-timing")
+            val text = "hello world, this is a longer line of plain text"
+            val s = snippet(dir, "01.txt", text, PlainTextFileType.INSTANCE)
+            onEdt { DirectiveSidecar.write(s.file, Directives(speedMs = 0, jitterMs = 0, newlineMs = 0)) }
+            val svc = fixture.project.getService(RunService::class.java)
+
+            onEdt { SnippetRunner.run(fixture.project, fixture.editor, s) }
+            // At 50ms/char the ~50-character snippet above would take well over 2000ms if the
+            // global default -- not the sidecar -- were what actually reached the player.
+            waitForIdle(svc, timeoutMs = 500)
+
+            assertEquals(text, fixture.editor.document.text)
+        } finally {
+            settings.loadState(savedGlobal)
         }
     }
 }

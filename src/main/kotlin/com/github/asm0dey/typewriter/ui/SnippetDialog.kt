@@ -1,7 +1,6 @@
 package com.github.asm0dey.typewriter.ui
 
 import com.github.asm0dey.typewriter.library.DirectiveSidecar
-import com.github.asm0dey.typewriter.library.SnippetDirs
 import com.github.asm0dey.typewriter.library.SnippetRunner
 import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
@@ -85,9 +84,8 @@ object DirectiveHeader {
      * `"$sentinel ..."` line. Such a line would never be recognised as a marker
      * ([com.github.asm0dey.typewriter.parse.MarkerScanner] short-circuits to no markers for
      * exactly this case) and would instead be typed verbatim into the target editor during a demo
-     * -- corruption arriving as added garbage rather than lost text. Spec section 11's policy for
-     * an unknown/uncommentable file type is "warn, proceed without commands"; writing a header
-     * that can only ever become stray body content contradicts that.
+     * -- corruption arriving as added garbage rather than lost text. Timing for such a snippet
+     * lives in [DirectiveSidecar] instead (spec section 9, resolved design question 22).
      */
     fun write(text: String, directives: Directives, sentinel: String, syntax: CommentSyntax): String {
         if (!syntax.hasAny) return text
@@ -127,52 +125,110 @@ object DirectiveHeader {
     data class FieldOutcome<T>(val value: T, val conflicted: Boolean)
 
     /**
-     * `SnippetDialog` shows the same directives in two editable places at once: the header text
-     * inside the `EditorTextField`, live-bound to the snippet's own [com.intellij.openapi.editor.Document],
-     * and the dialog's own spinner/checkbox controls, which are only ever read to *seed* their
-     * initial values when the dialog opens. Two failure modes fall out of that if OK writes the
-     * controls' values unconditionally:
+     * `SnippetDialog` shows the same directives in two editable places at once: the stored text
+     * (the header, or -- for a comment-less snippet -- the sidecar; see [decideSave]) and the
+     * dialog's own spinner/checkbox controls, which are only ever read to *seed* their initial
+     * values when the dialog opens. Two failure modes fall out of that if OK writes the controls'
+     * values unconditionally:
      *
      * 1. A speaker who edits the header directly in the editor (`// tw: speed 80` -> `90`),
      *    without touching the spinner, has that edit silently reverted to the spinner's stale `80`
      *    on OK -- the closest thing to data loss in this project, since unlike a bad run there is
      *    no abort/undo for it.
-     * 2. A spinner cannot represent "this field is absent from the header" -- it always shows
-     *    *some* number, falling back to the app-wide default when the header has none. Opening a
-     *    snippet with no header at all and simply clicking OK would therefore write a full header
-     *    that pins today's global defaults into that one file forever, invisibly, even though the
-     *    speaker changed nothing.
+     * 2. A spinner cannot represent "this field is absent" -- it always shows *some* number,
+     *    falling back to the app-wide default when there is none stored. Opening a snippet with
+     *    nothing stored at all and simply clicking OK would therefore write a full header (or
+     *    sidecar) that pins today's global defaults into that one file forever, invisibly, even
+     *    though the speaker changed nothing.
      *
      * [resolveField] is a pure decision that fixes both, **per field** (a speaker who nudges only
      * the jitter spinner must not thereby also pin speed and newline): given
-     * - [opened]: this field's value as the header had it when the dialog opened (`null` for a
-     *   nullable field means the header had no such directive),
-     * - [current]: this field's value as the header has it *right now*, re-read from the document
-     *   at OK time -- differs from [opened] exactly when the speaker edited the header directly,
+     * - [opened]: this field's value as it was stored when the dialog opened (`null` for a
+     *   nullable field means nothing was stored),
+     * - [current]: this field's value as it is stored *right now*, re-read at OK time -- differs
+     *   from [opened] exactly when the speaker edited the stored text directly,
      * - [controlChanged]: whether the speaker moved this field's own control (spinner or
      *   checkbox) away from the value it was initialised to when the dialog opened,
      * - [controlValue]: that control's current value,
      *
      * it returns the value to actually write for this field, plus whether doing so required
      * silently picking a side:
-     * - header unchanged, control unchanged -> keep [current] (== [opened]; for an absent field
+     * - stored unchanged, control unchanged -> keep [current] (== [opened]; for an absent field
      *   this keeps it `null` -- the fix for failure mode 2 above).
-     * - header unchanged, control changed -> write [controlValue] -- the control is still the
+     * - stored unchanged, control changed -> write [controlValue] -- the control is still the
      *   speaker's own tool for this field.
-     * - header changed, control unchanged -> keep [current] -- the speaker edited the header
+     * - stored changed, control unchanged -> keep [current] -- the speaker edited the stored text
      *   directly and meant it; this is the fix for failure mode 1 above.
-     * - both changed -> keep [current] (the `Document` is the snippet's one authoritative text,
-     *   spec section 5) but report `conflicted = true`, so the caller can tell the speaker their
-     *   control change was not applied rather than silently discard either edit.
+     * - both changed -> keep [current] (the stored text is authoritative, spec section 5) but
+     *   report `conflicted = true`, so the caller can tell the speaker their control change was
+     *   not applied rather than silently discard either edit.
      */
     fun <T> resolveField(opened: T, current: T, controlChanged: Boolean, controlValue: T): FieldOutcome<T> {
-        val headerChangedInEditor = current != opened
+        val storedChanged = current != opened
         return when {
-            !headerChangedInEditor && controlChanged -> FieldOutcome(controlValue, conflicted = false)
-            !headerChangedInEditor -> FieldOutcome(current, conflicted = false)
+            !storedChanged && controlChanged -> FieldOutcome(controlValue, conflicted = false)
+            !storedChanged -> FieldOutcome(current, conflicted = false)
             !controlChanged -> FieldOutcome(current, conflicted = false)
             else -> FieldOutcome(current, conflicted = true)
         }
+    }
+
+    /** Which store [SnippetDialog.saveDirectives] should write [SaveDecision.toWrite] to. */
+    enum class Store { HEADER, SIDECAR }
+
+    /**
+     * The complete outcome of one OK: what to write, whether writing is even needed, where it
+     * goes, and whether doing so required silently picking a side. See [decideSave].
+     */
+    data class SaveDecision(val store: Store, val toWrite: Directives, val needsWrite: Boolean, val conflicted: Boolean)
+
+    /**
+     * The single pure function behind `SnippetDialog`'s OK button -- combining [resolveField] for
+     * all four fields, the write gate (`toWrite != current`), and the header-vs-sidecar store
+     * routing into one decision `SnippetDialog` only has to execute, not compute. Extracted
+     * specifically because this combination -- assembling [Directives] from four outcomes, the
+     * write gate, and the store routing -- previously sat entirely inside the `DialogWrapper`,
+     * where nothing could test it directly; the two most serious defects a review round found
+     * both lived in exactly that untested seam (the playback path never consulting the sidecar,
+     * and a header-less/sidecar-less snippet's spinners pinning app defaults into it on a bare
+     * OK). This function has no dependency on `SnippetDialog`, the UI toolkit, or any store's own
+     * I/O -- only on [resolveField] and plain values -- so it is testable with no fixture.
+     *
+     * [hasCommentSyntax] decides [SaveDecision.store] ([Store.HEADER] when true, [Store.SIDECAR]
+     * otherwise) but is not itself part of [resolveField]'s per-field comparisons -- [opened] and
+     * [current] already reflect whichever store [hasCommentSyntax] selects, read by the caller
+     * before this function is called.
+     */
+    fun decideSave(
+        hasCommentSyntax: Boolean,
+        opened: Directives,
+        current: Directives,
+        controlRaw: Boolean,
+        controlSpeedMs: Int,
+        controlJitterMs: Int,
+        controlNewlineMs: Int,
+        speedBaseline: Int,
+        jitterBaseline: Int,
+        newlineBaseline: Int,
+    ): SaveDecision {
+        val rawOutcome = resolveField(opened.raw, current.raw, controlRaw != opened.raw, controlRaw)
+        val speedOutcome = resolveField(opened.speedMs, current.speedMs, controlSpeedMs != speedBaseline, controlSpeedMs)
+        val jitterOutcome =
+            resolveField(opened.jitterMs, current.jitterMs, controlJitterMs != jitterBaseline, controlJitterMs)
+        val newlineOutcome =
+            resolveField(opened.newlineMs, current.newlineMs, controlNewlineMs != newlineBaseline, controlNewlineMs)
+        val resolved = Directives(
+            raw = rawOutcome.value,
+            speedMs = speedOutcome.value,
+            jitterMs = jitterOutcome.value,
+            newlineMs = newlineOutcome.value,
+        )
+        return SaveDecision(
+            store = if (hasCommentSyntax) Store.HEADER else Store.SIDECAR,
+            toWrite = resolved,
+            needsWrite = resolved != current,
+            conflicted = listOf(rawOutcome, speedOutcome, jitterOutcome, newlineOutcome).any { it.conflicted },
+        )
     }
 }
 
@@ -184,13 +240,14 @@ object DirectiveHeader {
  *
  * Where timing is written depends on [syntax] (resolved design question 22): a comment-capable
  * snippet's timing lives in its own directive header, written on OK only per-field where the
- * speaker's own header edit doesn't already win -- see [DirectiveHeader.resolveField]. A
+ * speaker's own header edit doesn't already win -- see [DirectiveHeader.decideSave]. A
  * comment-less snippet (`!syntax.hasAny` -- no [com.intellij.lang.Commenter] for its language) has
  * no header to hold it at all: `DirectiveHeader.write` is a no-op for exactly that case, so its
- * timing instead lives in [DirectiveSidecar], a per-directory JSON file. The four timing controls
- * work identically either way -- the same [DirectiveHeader.resolveField] decision, just reading
- * and writing a different store -- and stay enabled in both cases; only `pause`/`action` markers
- * are unavailable for a comment-less snippet, and this dialog never offered those regardless.
+ * timing instead lives in [DirectiveSidecar], a `.twmeta` file co-located with the snippet. The
+ * four timing controls work identically either way -- the same [DirectiveHeader.decideSave]
+ * decision, just reading and writing a different store -- and stay enabled in both cases; only
+ * `pause`/`action` markers are unavailable for a comment-less snippet, and this dialog never
+ * offered those regardless.
  *
  * Precondition: the caller ([EditSnippetAction]) has already verified [snippet.file][Snippet.file]
  * has a live [Document] before constructing this dialog. A binary file has none; this class does
@@ -215,13 +272,8 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     /** Comment syntax for the snippet's own language -- see the class kdoc for what depends on it. */
     private val syntax = CommentSyntax.of(LanguageUtil.getFileTypeLanguage(snippet.fileType) ?: Language.ANY)
 
-    /** The snippet's own directory (global or project, per [Snippet.fromProject]) -- the sidecar
-     * lives at its root. Only consulted when [syntax] has no comments; `null` when that directory
-     * can no longer be resolved (e.g. deleted out from under an already-open dialog). */
-    private val snippetDir = if (snippet.fromProject) SnippetDirs.project(project) else SnippetDirs.global()
-
     /** The directives as the dialog read them when it opened, from whichever store [syntax]
-     * selects -- see [DirectiveHeader.resolveField]. */
+     * selects -- see [DirectiveHeader.decideSave]. */
     private val openedDirectives = currentDirectives()
 
     // The value each spinner is initialised to: the stored value, or the app default when there is
@@ -258,7 +310,7 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     private fun currentDirectives(): Directives = if (syntax.hasAny) {
         DirectiveHeader.read(document.text, settings.state.sentinel)
     } else {
-        snippetDir?.let { DirectiveSidecar.directivesFor(it, snippet.relativePath) } ?: Directives()
+        DirectiveSidecar.read(snippet.file)
     }
 
     private fun hotkeyText(): String {
@@ -297,69 +349,36 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     }
 
     /**
-     * Resolves each of the four directive fields independently via [DirectiveHeader.resolveField]
-     * -- never writing the controls' values over a stored value the speaker changed directly
-     * (header text, or -- for a comment-less snippet -- the sidecar), and never writing an absent
-     * field's app-default fallback into storage that never had it -- then writes the combined
-     * result to whichever store [syntax] selects, only if it actually differs from what is
-     * currently stored (so an unmodified dialog never triggers a rewrite -- and, for the header,
-     * thereby a cosmetic reformat -- of something nothing about this OK changed).
+     * Thin shell around [DirectiveHeader.decideSave]: gather the current controls and stored
+     * state, hand them to the pure decision, then execute exactly what it returns.
      */
     private fun saveDirectives() {
-        val current = currentDirectives()
-
-        val rawOutcome = DirectiveHeader.resolveField(
-            opened = openedDirectives.raw,
-            current = current.raw,
-            controlChanged = raw.isSelected != openedDirectives.raw,
-            controlValue = raw.isSelected,
-        )
-        val speedOutcome = DirectiveHeader.resolveField(
-            opened = openedDirectives.speedMs,
-            current = current.speedMs,
-            controlChanged = (speed.value as Int) != speedBaseline,
-            controlValue = speed.value as Int,
-        )
-        val jitterOutcome = DirectiveHeader.resolveField(
-            opened = openedDirectives.jitterMs,
-            current = current.jitterMs,
-            controlChanged = (jitter.value as Int) != jitterBaseline,
-            controlValue = jitter.value as Int,
-        )
-        val newlineOutcome = DirectiveHeader.resolveField(
-            opened = openedDirectives.newlineMs,
-            current = current.newlineMs,
-            controlChanged = (newline.value as Int) != newlineBaseline,
-            controlValue = newline.value as Int,
+        val decision = DirectiveHeader.decideSave(
+            hasCommentSyntax = syntax.hasAny,
+            opened = openedDirectives,
+            current = currentDirectives(),
+            controlRaw = raw.isSelected,
+            controlSpeedMs = speed.value as Int,
+            controlJitterMs = jitter.value as Int,
+            controlNewlineMs = newline.value as Int,
+            speedBaseline = speedBaseline,
+            jitterBaseline = jitterBaseline,
+            newlineBaseline = newlineBaseline,
         )
 
-        val resolved = Directives(
-            raw = rawOutcome.value,
-            speedMs = speedOutcome.value,
-            jitterMs = jitterOutcome.value,
-            newlineMs = newlineOutcome.value,
-        )
-        if (resolved != current) {
-            if (syntax.hasAny) {
-                val updated = DirectiveHeader.write(document.text, resolved, settings.state.sentinel, syntax)
-                if (updated != document.text) {
-                    WriteCommandAction.runWriteCommandAction(project) { document.setText(updated) }
+        if (decision.needsWrite) {
+            when (decision.store) {
+                DirectiveHeader.Store.HEADER -> {
+                    val updated = DirectiveHeader.write(document.text, decision.toWrite, settings.state.sentinel, syntax)
+                    if (updated != document.text) {
+                        WriteCommandAction.runWriteCommandAction(project) { document.setText(updated) }
+                    }
                 }
-            } else {
-                val dir = snippetDir
-                if (dir == null) {
-                    SnippetRunner.notify(
-                        project,
-                        "${snippet.relativePath}: could not locate its snippet directory -- timing changes were not saved",
-                        NotificationType.WARNING,
-                    )
-                } else {
-                    DirectiveSidecar.write(dir, snippet.relativePath, resolved)
-                }
+                DirectiveHeader.Store.SIDECAR -> DirectiveSidecar.write(snippet.file, decision.toWrite)
             }
         }
 
-        if (listOf(rawOutcome, speedOutcome, jitterOutcome, newlineOutcome).any { it.conflicted }) {
+        if (decision.conflicted) {
             SnippetRunner.notify(
                 project,
                 "${snippet.relativePath}: a timing field's stored value changed while this dialog " +

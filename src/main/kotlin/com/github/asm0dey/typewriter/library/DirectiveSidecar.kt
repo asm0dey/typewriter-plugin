@@ -1,122 +1,136 @@
 package com.github.asm0dey.typewriter.library
 
 import com.github.asm0dey.typewriter.model.Directives
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.JsonParseException
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.vfs.VirtualFile
 import java.io.IOException
+import java.io.StringReader
 import java.nio.charset.StandardCharsets
+import java.util.Properties
 
 /**
- * Timing for snippets whose language has no comment syntax at all (spec section 9, resolved
+ * Timing for a snippet whose language has no comment syntax at all (spec section 9, resolved
  * design question 22). A directive header needs a comment to hide inside it --
  * [com.github.asm0dey.typewriter.ui.DirectiveHeader.write] is a no-op for exactly this case, and
  * [com.github.asm0dey.typewriter.parse.MarkerScanner] returns no markers for the same underlying
- * reason -- so such a snippet's timing cannot live in the file at all. It lives instead in a JSON
- * sidecar, one per snippet directory (global and project each have their own), keyed by the
- * snippet's relative path within that directory.
+ * reason -- so such a snippet's timing cannot live in the file at all. It lives instead in a
+ * sidecar co-located with the snippet, `<snippetFileName>.twmeta`, one per snippet (not one per
+ * directory), in [java.util.Properties] format, holding only the fields that were actually set.
+ * [SnippetRunner.run] consults it for exactly the same languages, so playback timing matches what
+ * the dialog shows and saves.
  *
  * Consulted **only** when [com.github.asm0dey.typewriter.parse.CommentSyntax.hasAny] is false for
  * a snippet's language -- a comment-capable snippet's header remains the sole source of truth for
  * that snippet, so the header and the sidecar never compete over the same snippet.
  *
- * Renames and deletions are not reconciled: a snippet renamed or removed leaves its sidecar entry
- * behind, orphaned. This is a deliberate, cheap consequence rather than a bug -- reconciliation
- * machinery is not built for it. An orphaned entry is simply never looked up again (nothing reads
- * the sidecar except by an actual snippet's own relative path), so it costs nothing beyond a few
- * stale bytes on disk until the sidecar is next rewritten for an unrelated entry, at which point
- * [write] preserves it as-is (it is never the entry being touched).
+ * `java.util.Properties`, not a JSON library: the JDK owns the format outright, so there is no
+ * dependency to reason about at all -- in particular no repeat of the Gson problem an earlier
+ * version of this file had, where the platform's bundled copy moves out of core and into a
+ * modularised library jar on 253+, a plausible `NoClassDefFoundError` this project's
+ * `sinceBuild = "252"` with no `untilBuild` cannot rule out. It is also line-oriented, which
+ * matters because this file travels in a shared demo repository: two speakers' edits to the same
+ * `.twmeta` conflict one line at a time, the way any other line-oriented source file does, rather
+ * than as a single JSON structure.
+ *
+ * One sidecar per snippet, not one per directory, is what makes a corrupt sidecar harmless beyond
+ * its own snippet: there is no other snippet's data in the same file for a read-modify-write to
+ * put at risk, so [read] degrading a malformed or unreadable `.twmeta` to "no overrides" is
+ * correct with no further guard needed -- contrast the one-file-per-directory design this
+ * replaced, where the same degradation on the read side of a write was a real hazard (see
+ * `git log -- docs/superpowers/specs/2026-09-14-typewriter2-design.md` for that design's own
+ * rejection, resolved design question 22).
+ *
+ * Renames and deletions are not reconciled: a renamed or deleted snippet leaves its `.twmeta`
+ * behind, orphaned. Nothing looks up a sidecar except by its owning snippet's own current
+ * filename, so an orphan costs nothing beyond a few stale bytes on disk -- deliberately not worth
+ * building reconciliation machinery for.
  */
 object DirectiveSidecar {
 
     /**
-     * Exact filename. [SnippetLibrary.collect]/[SnippetLibrary.sequence] exclude it by this exact
-     * name so it never registers itself as a playable snippet with its own action.
+     * Suffix appended to a snippet's own filename for its sidecar -- `01.txt` -> `01.txt.twmeta` --
+     * co-located in the same directory as the snippet, at any nesting depth.
+     * [SnippetLibrary.collect]/[SnippetLibrary.sequence] exclude any file whose name ends with this
+     * suffix, so a sidecar never registers itself as a playable snippet with its own action -- by
+     * extension, not by an exact name, so a sidecar nested in a subdirectory (right next to the
+     * snippet it belongs to, since sidecars are per-snippet now) is excluded exactly like one at a
+     * directory's root.
      */
-    const val FILE_NAME = ".typewriter.json"
+    const val SUFFIX = ".twmeta"
 
-    private val gson = Gson()
+    private const val KEY_RAW = "raw"
+    private const val KEY_SPEED = "speed"
+    private const val KEY_JITTER = "jitter"
+    private const val KEY_NEWLINE = "newline"
+
+    /** The sidecar file for [snippetFile], if one currently exists next to it. */
+    fun sidecarFileFor(snippetFile: VirtualFile): VirtualFile? =
+        snippetFile.parent?.findChild(snippetFile.name + SUFFIX)
 
     /**
-     * The JSON shape of one snippet's sidecar entry. `raw` is `null` rather than `false` when
-     * unset -- mirroring [Directives]' own header-text convention, where `raw` is only ever
-     * mentioned when true -- so [Entry.toDirectives] can tell "never set" from "explicitly off"
-     * apart the same way a header does, even though [Directives.raw] itself has no such
-     * distinction to preserve.
+     * [snippetFile]'s directives from its own sidecar, or [Directives()][Directives] (no override)
+     * when the sidecar is absent, unreadable, or cannot be parsed as `.properties` text -- a broken
+     * or missing sidecar degrades to "no timing overrides", never an error that blocks a demo. Safe
+     * by construction (see the class kdoc): a `.twmeta` holds exactly one snippet's own fields, so
+     * there is no other snippet's data for a corrupt read to put at risk.
      */
-    private data class Entry(
-        val raw: Boolean? = null,
-        val speedMs: Int? = null,
-        val jitterMs: Int? = null,
-        val newlineMs: Int? = null,
-    )
-
-    private fun Entry.toDirectives() = Directives(raw = raw == true, speedMs = speedMs, jitterMs = jitterMs, newlineMs = newlineMs)
-    private fun Directives.toEntry() = Entry(raw = raw.takeIf { it }, speedMs = speedMs, jitterMs = jitterMs, newlineMs = newlineMs)
-
-    /**
-     * Every entry currently in [directory]'s sidecar, or empty when the file is absent, unreadable,
-     * or not valid JSON -- a broken or missing sidecar degrades to "no timing overrides", never an
-     * error that blocks a demo.
-     */
-    fun read(directory: VirtualFile): Map<String, Directives> {
-        val file = directory.findChild(FILE_NAME) ?: return emptyMap()
-        val json = try {
+    fun read(snippetFile: VirtualFile): Directives {
+        val file = sidecarFileFor(snippetFile) ?: return Directives()
+        val text = try {
             String(file.contentsToByteArray(), StandardCharsets.UTF_8)
         } catch (e: IOException) {
-            return emptyMap()
+            return Directives()
         }
-        // Parsed via a plain JsonObject and one fromJson(JsonElement, Class<Entry>) per entry --
-        // not the `Map<String, Entry>` TypeToken idiom, which (anonymous-subclass form or
-        // TypeToken.getParameterized alike) deserialised every value as a raw LinkedTreeMap
-        // instead of an Entry here, throwing a ClassCastException the moment a field was read off
-        // one. Class<T> overloads throughout sidestep whatever was going wrong with reifying the
-        // parameterized Map type.
-        val root = try {
-            gson.fromJson(json, JsonObject::class.java) ?: return emptyMap()
-        } catch (e: JsonParseException) {
-            return emptyMap()
+        val props = Properties()
+        try {
+            props.load(StringReader(text))
+        } catch (e: IOException) {
+            return Directives()
+        } catch (e: IllegalArgumentException) {
+            // Properties.load's own documented failure mode: a malformed \uXXXX escape in the
+            // file. Everything else -- git merge-conflict markers, arbitrary prose, blank lines --
+            // it tolerates as odd-but-harmless keys/values none of the four below ever match.
+            return Directives()
         }
-        return try {
-            root.entrySet().associate { (key, value) -> key to gson.fromJson(value, Entry::class.java).toDirectives() }
-        } catch (e: JsonParseException) {
-            emptyMap()
-        }
+        return Directives(
+            raw = props.getProperty(KEY_RAW) == "true",
+            speedMs = props.getProperty(KEY_SPEED)?.toIntOrNull(),
+            jitterMs = props.getProperty(KEY_JITTER)?.toIntOrNull(),
+            newlineMs = props.getProperty(KEY_NEWLINE)?.toIntOrNull(),
+        )
     }
 
     /**
-     * [relativePath]'s directives from [directory]'s sidecar, or [Directives()][Directives] (no
-     * override) when it has no entry for that path -- the same default
-     * [com.github.asm0dey.typewriter.ui.DirectiveHeader.read] returns for a header-less
-     * comment-capable snippet.
-     */
-    fun directivesFor(directory: VirtualFile, relativePath: String): Directives =
-        read(directory)[relativePath] ?: Directives()
-
-    /**
-     * Sets [relativePath]'s entry in [directory]'s sidecar to [directives], or removes it entirely
-     * when [directives] has nothing set (`== Directives()`) -- the sidecar analogue of
+     * Writes [directives] into [snippetFile]'s own sidecar -- one `key=value` line per field that
+     * is actually set, `raw` only when true (mirroring the header's own convention: absence means
+     * unset/false; an explicit `raw=false` line is never written). Deletes the sidecar entirely
+     * when [directives] has nothing set (`== Directives()`), rather than leaving an empty file next
+     * to the snippet -- the sidecar analogue of
      * [com.github.asm0dey.typewriter.ui.DirectiveHeader.write]'s "empty directives removes the
-     * header" behaviour, so a comment-less snippet the speaker never adjusts gains no entry, and
-     * one that had timing but had it fully cleared loses its entry rather than being written as an
-     * all-null husk. Deletes the sidecar file itself once its last entry is removed, rather than
-     * leaving an empty `{}` behind in the directory.
+     * header" behaviour.
+     *
+     * The output is hand-written, not [Properties.store]: `store` unconditionally prepends a
+     * `#<timestamp>` comment line, which would change on every save regardless of whether the
+     * directives themselves did, undermining the very line-level-diff friendliness the sidecar
+     * format was chosen for (see the class kdoc). A fixed field order (`raw`, `speed`, `jitter`,
+     * `newline`) keeps the output deterministic for the same reason.
      */
-    fun write(directory: VirtualFile, relativePath: String, directives: Directives) {
-        val current = read(directory).toMutableMap()
-        if (directives == Directives()) current.remove(relativePath) else current[relativePath] = directives
-
-        val existing = directory.findChild(FILE_NAME)
-        if (current.isEmpty()) {
+    fun write(snippetFile: VirtualFile, directives: Directives) {
+        val existing = sidecarFileFor(snippetFile)
+        if (directives == Directives()) {
             if (existing != null) WriteAction.run<IOException> { existing.delete(this) }
             return
         }
-        val json = gson.toJson(current.mapValues { it.value.toEntry() })
-        val bytes = json.toByteArray(StandardCharsets.UTF_8)
+        val lines = buildList {
+            if (directives.raw) add("$KEY_RAW=true")
+            directives.speedMs?.let { add("$KEY_SPEED=$it") }
+            directives.jitterMs?.let { add("$KEY_JITTER=$it") }
+            directives.newlineMs?.let { add("$KEY_NEWLINE=$it") }
+        }
+        val bytes = (lines.joinToString("\n") + "\n").toByteArray(StandardCharsets.UTF_8)
         WriteAction.run<IOException> {
-            val target = existing ?: directory.createChildData(this, FILE_NAME)
+            val target = existing ?: checkNotNull(snippetFile.parent) { "${snippetFile.name} has no parent directory" }
+                .createChildData(this, snippetFile.name + SUFFIX)
             target.setBinaryContent(bytes)
         }
     }

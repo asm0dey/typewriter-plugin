@@ -3,6 +3,7 @@ package com.github.asm0dey.typewriter.library
 import com.github.asm0dey.typewriter.format.SnippetFormatter
 import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.model.Step
+import com.github.asm0dey.typewriter.parse.CommentSyntax
 import com.github.asm0dey.typewriter.parse.MarkerParser
 import com.github.asm0dey.typewriter.parse.MarkerScanner
 import com.github.asm0dey.typewriter.run.BaseIndent
@@ -12,6 +13,8 @@ import com.github.asm0dey.typewriter.run.RunService
 import com.github.asm0dey.typewriter.run.blocked
 import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
 import com.github.asm0dey.typewriter.ui.TypeWriterSettings
+import com.intellij.lang.Language
+import com.intellij.lang.LanguageUtil
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -79,6 +82,14 @@ object SnippetRunner {
             return
         }
 
+        // A comment-less snippet's markers -- MarkerScanner.scan returns none for exactly this
+        // case -- so MarkerParser never builds directives for it; probe.directives/program.directives
+        // are always Directives() below. Its real directives, when it has any, live in its
+        // .twmeta sidecar instead (spec section 9, resolved design question 22) -- null here means
+        // "this snippet has comments; trust the marker-parsed directives as usual".
+        val syntax = CommentSyntax.of(LanguageUtil.getFileTypeLanguage(snippet.fileType) ?: Language.ANY)
+        val sidecarDirectives = if (syntax.hasAny) null else DirectiveSidecar.read(snippet.file)
+
         var formatWarning: String? = null
         var source = text
         val psiForDirectives = PsiFileFactory.getInstance(project)
@@ -86,7 +97,7 @@ object SnippetRunner {
         val probe = MarkerParser.parse(
             text, MarkerScanner.scan(psiForDirectives, settings.state.sentinel), settings.state.sentinel,
         )
-        if (settings.state.formatOnPlay && !probe.directives.raw) {
+        if (settings.state.formatOnPlay && !(sidecarDirectives ?: probe.directives).raw) {
             val result = SnippetFormatter.format(project, snippet.fileType, snippet.file.name, text)
             source = result.text
             formatWarning = result.warning
@@ -128,7 +139,7 @@ object SnippetRunner {
         val steps = program.steps.map { step ->
             if (step is Step.Type) Step.Type(BaseIndent.apply(step.text, indent, column)) else step
         }
-        val timing = program.directives.timing(settings.defaultTiming())
+        val timing = (sidecarDirectives ?: program.directives).timing(settings.defaultTiming())
         project.getService(RunService::class.java).launch(target, steps, timing)
     }
 
