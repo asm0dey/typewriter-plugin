@@ -28,5 +28,9 @@
                 text="TypeWriter: Type Previous"/>
         <action id="typewriter.undoRun" class="com.github.asm0dey.typewriter.library.UndoRunAction"
                 text="TypeWriter: Undo Run"/>
+        <action id="typewriter.typeSnippet" class="com.github.asm0dey.typewriter.ui.TypeSnippetPickerAction"
+                text="TypeWriter: Type Snippet..."/>
+        <action id="typewriter.editSnippet" class="com.github.asm0dey.typewriter.ui.EditSnippetAction"
+                text="TypeWriter: Edit Snippet..."/>
     </actions>
 </idea-plugin>
