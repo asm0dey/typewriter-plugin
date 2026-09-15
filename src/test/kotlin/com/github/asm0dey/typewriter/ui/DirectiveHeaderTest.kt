@@ -49,3 +49,42 @@ class DirectiveHeaderTest : TypeWriterFixtureTestCase() {
         assertEquals(directives, DirectiveHeader.read(text, "tw:"))
     }
 }
+
+/**
+ * [DirectiveHeader.resolve] is a pure decision over three [Directives] snapshots -- opened,
+ * current (from the editor), and spinner -- so it needs no PSI fixture at all: a test needing no
+ * PSI fixture extends nothing (plan "Test conventions").
+ */
+class DirectiveHeaderResolveTest {
+
+    @Test
+    fun testResolveWritesSpinnerWhenNeitherChanged() {
+        val d = Directives(speedMs = 80)
+        assertEquals(DirectiveHeader.Resolution.WRITE_SPINNER, DirectiveHeader.resolve(d, d, d))
+    }
+
+    @Test
+    fun testResolveWritesSpinnerWhenOnlySpinnerChanged() {
+        val opened = Directives(speedMs = 80)
+        val spinner = Directives(speedMs = 90)
+        assertEquals(DirectiveHeader.Resolution.WRITE_SPINNER, DirectiveHeader.resolve(opened, opened, spinner))
+    }
+
+    @Test
+    fun testResolveKeepsEditorWhenOnlyHeaderChanged() {
+        val opened = Directives(speedMs = 80)
+        val current = Directives(speedMs = 90)
+        assertEquals(DirectiveHeader.Resolution.KEEP_EDITOR, DirectiveHeader.resolve(opened, current, opened))
+    }
+
+    @Test
+    fun testResolveConflictsWhenBothChanged() {
+        val opened = Directives(speedMs = 80)
+        val current = Directives(speedMs = 90)
+        val spinner = Directives(speedMs = 70)
+        assertEquals(
+            DirectiveHeader.Resolution.CONFLICT_PREFER_EDITOR,
+            DirectiveHeader.resolve(opened, current, spinner),
+        )
+    }
+}

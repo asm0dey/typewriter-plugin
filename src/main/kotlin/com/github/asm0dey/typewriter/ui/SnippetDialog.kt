@@ -6,6 +6,7 @@ import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.parse.CommentSyntax
 import com.intellij.lang.Language
 import com.intellij.lang.LanguageUtil
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
@@ -106,6 +107,54 @@ object DirectiveHeader {
             "${syntax.blockPrefix} $body ${syntax.blockSuffix}"
         else -> body
     }
+
+    /** What [SnippetDialog.doOKAction] should do with the header -- see [resolve]. */
+    enum class Resolution { WRITE_SPINNER, KEEP_EDITOR, CONFLICT_PREFER_EDITOR }
+
+    /**
+     * `SnippetDialog` shows the same directives in two editable places at once: the header text
+     * inside the [EditorTextField], live-bound to the snippet's own [com.intellij.openapi.editor.Document],
+     * and the dialog's own spinner/checkbox controls, which are read once when the dialog opens.
+     * Naively writing the spinners' values over the header on OK silently discards a header edit
+     * the speaker made directly in the editor -- the one place in this task a speaker's own typed
+     * text could be lost without an abort/undo to recover it.
+     *
+     * This is a pure decision over three [Directives] snapshots, so it needs no dialog, no editor,
+     * no UI at all to test:
+     * - [opened]: the directives the dialog read when it opened.
+     * - [current]: the directives the header parses to right now, from whatever text presently
+     *   stands in the document -- differs from [opened] exactly when the speaker edited the header
+     *   directly in the editor.
+     * - [spinner]: the directives assembled from the dialog's own controls right now -- differs
+     *   from [opened] exactly when the speaker changed a control.
+     *
+     * Deliberately compares parsed [Directives] values rather than raw header text: the speaker's
+     * *original* header formatting (spacing, token order) need not match what [write] would
+     * canonically produce, and a raw-string comparison would misread that cosmetic difference as
+     * "the spinners changed" and manufacture a false conflict on the very first OK of an
+     * already-existing, differently-formatted header.
+     *
+     * - [Resolution.WRITE_SPINNER]: the header is unchanged in the editor -- the spinners are
+     *   still the control the speaker used (or nothing changed at all, in which case the caller's
+     *   own `updated != document.text` guard makes the write a no-op).
+     * - [Resolution.KEEP_EDITOR]: the header changed in the editor and the spinners did not -- the
+     *   speaker edited the header directly and meant it; writing the stale spinner values over it
+     *   would silently discard that edit, which is exactly the bug this function exists to
+     *   prevent.
+     * - [Resolution.CONFLICT_PREFER_EDITOR]: both changed. Neither side is silently authoritative
+     *   here: the editor text wins (the `Document` is the snippet's one authoritative text, spec
+     *   section 5), and the caller is expected to tell the speaker their control change was not
+     *   applied rather than discard either edit silently.
+     */
+    fun resolve(opened: Directives, current: Directives, spinner: Directives): Resolution {
+        val headerChangedInEditor = current != opened
+        val spinnerChanged = spinner != opened
+        return when {
+            !headerChangedInEditor -> Resolution.WRITE_SPINNER
+            !spinnerChanged -> Resolution.KEEP_EDITOR
+            else -> Resolution.CONFLICT_PREFER_EDITOR
+        }
+    }
 }
 
 /**
@@ -121,14 +170,30 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
     private val document: Document = FileDocumentManager.getInstance().getDocument(snippet.file)!!
     private val editorField = EditorTextField(document, project, snippet.fileType, false, false).apply {
         preferredSize = Dimension(680, 360)
+        // EditorTextField defaults to the Swing/LAF font (a proportional UI font, e.g. "Inter"),
+        // overriding the editor colour scheme's own monospace font -- see setupEditorFont's
+        // myInheritSwingFont branch. Snippets are whitespace-sensitive (base indent, the
+        // whitespace-equivalence guard, column positions); the one thing a speaker is checking
+        // when authoring one is unreadable in a proportional font. Opting out keeps the field on
+        // the editor scheme's own font (spec section 9: "a real editor -- monospace, highlighting,
+        // completion").
+        setFontInheritedFromLAF(false)
     }
     private val settings = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
-    private val current = DirectiveHeader.read(document.text, settings.state.sentinel)
 
-    private val speed = JSpinner(SpinnerNumberModel(current.speedMs ?: settings.state.speedMs, 0, 5000, 10))
-    private val jitter = JSpinner(SpinnerNumberModel(current.jitterMs ?: settings.state.jitterMs, 0, 5000, 5))
-    private val newline = JSpinner(SpinnerNumberModel(current.newlineMs ?: settings.state.newlineMs, 0, 5000, 50))
-    private val raw = JBCheckBox("Type as authored (raw)", current.raw)
+    /** The directives as the dialog read them when it opened -- see [DirectiveHeader.resolve]. */
+    private val openedDirectives = DirectiveHeader.read(document.text, settings.state.sentinel)
+
+    private val speed = JSpinner(
+        SpinnerNumberModel(openedDirectives.speedMs ?: settings.state.speedMs, 0, 5000, 10),
+    )
+    private val jitter = JSpinner(
+        SpinnerNumberModel(openedDirectives.jitterMs ?: settings.state.jitterMs, 0, 5000, 5),
+    )
+    private val newline = JSpinner(
+        SpinnerNumberModel(openedDirectives.newlineMs ?: settings.state.newlineMs, 0, 5000, 50),
+    )
+    private val raw = JBCheckBox("Type as authored (raw)", openedDirectives.raw)
 
     private var playOnClose = false
 
@@ -182,19 +247,40 @@ class SnippetDialog(private val project: Project, private val snippet: Snippet) 
         }
     }
 
+    /**
+     * Writes the spinners' directives into the header -- unless the speaker edited the header
+     * directly in the editor since the dialog opened, in which case that edit must not be
+     * silently overwritten by stale spinner state. See [DirectiveHeader.resolve].
+     */
     private fun saveDirectives() {
-        val directives = Directives(
+        val spinnerDirectives = Directives(
             raw = raw.isSelected,
             speedMs = speed.value as Int,
             jitterMs = jitter.value as Int,
             newlineMs = newline.value as Int,
         )
+        val sentinel = settings.state.sentinel
+        val currentDirectives = DirectiveHeader.read(document.text, sentinel)
+
+        when (DirectiveHeader.resolve(openedDirectives, currentDirectives, spinnerDirectives)) {
+            DirectiveHeader.Resolution.WRITE_SPINNER -> writeHeader(spinnerDirectives, sentinel)
+            DirectiveHeader.Resolution.KEEP_EDITOR -> Unit // the speaker's own header edit stands
+            DirectiveHeader.Resolution.CONFLICT_PREFER_EDITOR -> SnippetRunner.notify(
+                project,
+                "${snippet.relativePath}: header was edited directly and the timing fields also " +
+                    "changed -- kept the edited header, discarded the timing field changes",
+                NotificationType.WARNING,
+            )
+        }
+        FileDocumentManager.getInstance().saveDocument(document)
+    }
+
+    private fun writeHeader(directives: Directives, sentinel: String) {
         val language: Language = LanguageUtil.getFileTypeLanguage(snippet.fileType) ?: Language.ANY
         val syntax = CommentSyntax.of(language)
-        val updated = DirectiveHeader.write(document.text, directives, settings.state.sentinel, syntax)
+        val updated = DirectiveHeader.write(document.text, directives, sentinel, syntax)
         if (updated != document.text) {
             WriteCommandAction.runWriteCommandAction(project) { document.setText(updated) }
         }
-        FileDocumentManager.getInstance().saveDocument(document)
     }
 }
