@@ -20,12 +20,12 @@ dependencies {
     // test-framework-junit5 pulls junit-jupiter-engine as a runtime-only, transitively-stripped
     // dependency (its own pom excludes all of ITS transitives) - @Test/Assertions need the API
     // explicitly on the compile classpath, pinned to the same version the bundled engine resolves to.
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.14.4")
+    testImplementation("org.junit.jupiter:junit-jupiter-api:6.1.3")
     // JUnit5 test framework still references JUnit4 classes at runtime (JetBrains FAQ).
     testRuntimeOnly("junit:junit:4.13.2")
     // Gradle's test task needs the JUnit Platform launcher on the runtime classpath to execute
     // JUnit5 tests; nothing in the bundled test-framework-junit5 pom brings it in.
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.14.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.3")
     intellijPlatform {
         intellijIdea("2025.2.6.2")
         testFramework(TestFrameworkType.Platform)
