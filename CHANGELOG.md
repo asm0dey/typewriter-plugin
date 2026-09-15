@@ -1,6 +1,8 @@
 # TypeWriter Changelog
 
-## 1.0.1
+## [Unreleased]
+
+## [1.0.1]
 
 ### Fixed
 
@@ -10,7 +12,7 @@
   stayed under the 28 spaces it was authored with. Lines are still never split,
   reordered, or added: the retry only re-indents each line where it stands.
 
-## 1.0.0
+## [1.0.0]
 
 Complete rewrite.
 
@@ -40,3 +42,7 @@ Complete rewrite.
 - Hotkeys are ordinary IDE actions bound in Settings > Keymap. The plugin no
   longer writes to your keymap, and an action id no longer changes when you
   change a shortcut.
+
+[Unreleased]: https://github.com/asm0dey/typewriter-plugin/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/asm0dey/typewriter-plugin/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/asm0dey/typewriter-plugin/commits/v1.0.0
