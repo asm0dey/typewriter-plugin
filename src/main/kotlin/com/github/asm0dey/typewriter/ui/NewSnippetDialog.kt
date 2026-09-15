@@ -12,11 +12,14 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileTypes.ExactFileNameMatcher
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.FileTypeManager
+import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.ValidationInfo
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.ui.ComboboxSpeedSearch
+import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import java.io.IOException
@@ -55,6 +58,12 @@ object SnippetFileNames {
      * plugin installed for it -- it cannot appear here; the workaround is to install the relevant
      * language plugin (or pick "Plain Text" and rename the file afterward, accepting that it
      * types with no comment-based markers until the extension is fixed).
+     *
+     * On a real IDE this list runs to 100+ entries, several of them near-duplicates (multiple
+     * Angular/Svg language-service versions, a run of `*ignore` file variants) -- that noise is
+     * inherent to listing "every registered non-binary FileType" as spec section 9 requires, and
+     * is not filtered further here. [preselected] and the chooser's speed search (installed in
+     * [NewSnippetDialog]) are what make a 100+-entry list usable, not narrowing this list.
      */
     fun choices(): List<FileType> =
         FileTypeManager.getInstance().registeredFileTypes
@@ -71,6 +80,34 @@ object SnippetFileNames {
             .filterIsInstance<ExactFileNameMatcher>()
             .firstOrNull()
             ?.presentableString
+
+    /**
+     * The chooser's display label for [fileType]: its [FileType.getDisplayName], with the default
+     * extension appended in parentheses when there is one -- `"Java (.java)"`. The extension is
+     * what picking a type actually means (see the class kdoc), and two entries can share a
+     * display name while differing in extension, so the label needs to show it. Exact-name types
+     * (no default extension) render as just their display name.
+     */
+    fun label(fileType: FileType): String {
+        val extension = fileType.defaultExtension
+        return if (extension.isEmpty()) fileType.displayName else "${fileType.displayName} (.$extension)"
+    }
+
+    /**
+     * Which of [choices] the dialog should open on. [currentFileType] is the file type of
+     * whatever the speaker was just looking at (typically the currently open editor's file) --
+     * the best available guess for what they are about to type next, since a snippet is almost
+     * always written in the language on screen. Falls back to Plain Text (present in [choices]
+     * whenever it is non-empty, since [PlainTextFileType] is never binary and always has a
+     * default extension) when there is no current file, or its type is not offered here at all
+     * (e.g. it is binary and so excluded from [choices]). A [choices] list that somehow omits
+     * Plain Text too falls back to its first entry, so this never fails for a non-empty list.
+     */
+    fun preselected(choices: List<FileType>, currentFileType: FileType?): FileType =
+        choices.firstOrNull { it == currentFileType }
+            ?: choices.firstOrNull { it == PlainTextFileType.INSTANCE }
+            ?: choices.firstOrNull()
+            ?: PlainTextFileType.INSTANCE
 
     /**
      * Combines [stem] with [fileType] into a filename that resolves back to [fileType] via
@@ -111,11 +148,24 @@ object SnippetFileNames {
  * Name + file-type chooser for creating a new snippet (spec section 9, "New snippet"). The
  * combo's selection is authoritative for the resulting filename's extension -- see
  * [SnippetFileNames.suggestName] -- so there is no separate language field.
+ *
+ * The combo shows [SnippetFileNames.label] for every entry (not a bare [FileType], whose default
+ * `toString()` is unreadable Java object noise), opens preselected on [SnippetFileNames.preselected]
+ * for the currently open file, and carries a [ComboboxSpeedSearch] over the same label so any of
+ * the 100+ registered types is reachable by typing a few letters, without needing to reorder --
+ * and thereby make less predictable -- the otherwise fully alphabetical, unfiltered list spec
+ * section 9 requires.
  */
 class NewSnippetDialog(project: Project) : DialogWrapper(project) {
 
     private val stemField = JBTextField("01-snippet")
-    private val typeCombo = JComboBox(DefaultComboBoxModel(SnippetFileNames.choices().toTypedArray()))
+    private val choices = SnippetFileNames.choices()
+    private val typeCombo = JComboBox(DefaultComboBoxModel(choices.toTypedArray())).apply {
+        renderer = SimpleListCellRenderer.create("") { SnippetFileNames.label(it) }
+        val currentFileType = FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.fileType
+        selectedItem = SnippetFileNames.preselected(choices, currentFileType)
+        ComboboxSpeedSearch.installSpeedSearch(this) { SnippetFileNames.label(it) }
+    }
 
     init {
         title = "New TypeWriter Snippet"

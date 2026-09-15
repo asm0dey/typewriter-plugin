@@ -78,4 +78,59 @@ class SnippetFileNameTest : TypeWriterFixtureTestCase() {
     fun testEmptyStemMechanicallyGetsJustTheExtension() {
         assertEquals(".java", SnippetFileNames.suggestName(JavaFileType.INSTANCE, ""))
     }
+
+    // The chooser must never render a bare FileType's default Object#toString() -- that was the
+    // fix-round defect: every combo row showed "com.intellij....@38776938" instead of a name.
+    @Test
+    fun testLabelShowsDisplayNameWithExtension() {
+        assertEquals("Java (.java)", SnippetFileNames.label(JavaFileType.INSTANCE))
+    }
+
+    // An exact-name type has no default extension, so the label is just its display name -- no
+    // dangling empty parentheses.
+    @Test
+    fun testLabelOmitsParenthesesWhenTypeHasNoDefaultExtension() {
+        val dockerfile = FileTypeManager.getInstance().getFileTypeByFileName("Dockerfile")
+        if (dockerfile == PlainTextFileType.INSTANCE || dockerfile == UnknownFileType.INSTANCE) {
+            println("SKIPPED: Docker plugin absent, exact-name matching not exercised")
+            return
+        }
+        assertEquals(dockerfile.displayName, SnippetFileNames.label(dockerfile))
+    }
+
+    // Fix-round defect 2: the dialog used to open on whatever registeredFileTypes happened to
+    // sort first alphabetically (AiIgnore, in a real IDE) instead of anything relevant. The
+    // currently-open file's type, when it is one of the offered choices, is the best guess for
+    // what the speaker is about to type.
+    @Test
+    fun testPreselectedPrefersTheCurrentFileTypeWhenItIsAmongTheChoices() {
+        val choices = listOf(PlainTextFileType.INSTANCE, JavaFileType.INSTANCE)
+        assertEquals(JavaFileType.INSTANCE, SnippetFileNames.preselected(choices, JavaFileType.INSTANCE))
+    }
+
+    // No current editor (nothing open, or a brand-new empty project window) falls back to Plain
+    // Text rather than leaving the choice to whatever sorts first.
+    @Test
+    fun testPreselectedFallsBackToPlainTextWhenThereIsNoCurrentFile() {
+        val choices = listOf(PlainTextFileType.INSTANCE, JavaFileType.INSTANCE)
+        assertEquals(PlainTextFileType.INSTANCE, SnippetFileNames.preselected(choices, null))
+    }
+
+    // The currently open file can have a type this dialog does not offer at all (e.g. it is
+    // binary, so choices() excludes it) -- same fallback as "no current file".
+    @Test
+    fun testPreselectedFallsBackToPlainTextWhenTheCurrentFileTypeIsNotOffered() {
+        val choices = listOf(PlainTextFileType.INSTANCE, JavaFileType.INSTANCE)
+        assertEquals(PlainTextFileType.INSTANCE, SnippetFileNames.preselected(choices, UnknownFileType.INSTANCE))
+    }
+
+    // Defends the function's own last-resort branch: even if some future choices() filter change
+    // ever dropped Plain Text from the list, preselected() still returns something in that list
+    // rather than the hard-coded PlainTextFileType.INSTANCE fallback (which would not be a valid
+    // combo selection here).
+    @Test
+    fun testPreselectedFallsBackToTheFirstChoiceWhenPlainTextIsNotAmongThem() {
+        val choices = listOf(JavaFileType.INSTANCE)
+        assertEquals(JavaFileType.INSTANCE, SnippetFileNames.preselected(choices, null))
+    }
 }
