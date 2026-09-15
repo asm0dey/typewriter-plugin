@@ -20,6 +20,8 @@
 
     <actions>
         <group id="typewriter.snippets" text="TypeWriter" popup="true"/>
+        <action id="typewriter.newSnippet" class="com.github.asm0dey.typewriter.ui.NewSnippetAction"
+                text="TypeWriter: New Snippet..."/>
         <action id="typewriter.typeNext" class="com.github.asm0dey.typewriter.library.TypeNextAction"
                 text="TypeWriter: Type Next"/>
         <action id="typewriter.typePrevious" class="com.github.asm0dey.typewriter.library.TypePreviousAction"
