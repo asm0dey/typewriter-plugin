@@ -5,6 +5,7 @@ import com.github.asm0dey.typewriter.format.SnippetFormatter
 import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.parse.MarkerParser
 import com.github.asm0dey.typewriter.parse.MarkerScanner
+import com.github.asm0dey.typewriter.run.BaseIndent
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.fileTypes.UnknownFileType
@@ -20,6 +21,17 @@ import org.junit.jupiter.api.Test
  * place the whole pipeline -- read -> format -> parse -> [typed text] -- is asserted against
  * fixed expected output, across more than one language. Every other test in this project verifies
  * a single stage.
+ *
+ * Most tests here call [typed] directly, which stops at parse: the fixture is configured as a
+ * standalone top-level file with no destination caret, so base indent is the identity transform
+ * and never runs. [testAcceptanceOneCarriesBaseIndentIntoANestedDestination] is the one fixture
+ * that goes one stage further -- read -> format -> parse -> indent -- driving [BaseIndent.compute]
+ * and [BaseIndent.apply] against a real destination caret exactly as
+ * `com.github.asm0dey.typewriter.library.SnippetRunner.run` does, per spec line 842 ("Base indent
+ * is applied on top of the above in both modes"). It does not additionally drive `Player` or
+ * `RunService` -- those have their own dedicated suites (`PlayerTest`, `RunServiceTest`), and
+ * `Player.play`'s contract is "insert this plain string starting at the caret", which the applied
+ * indent already fully determines; there is nothing left for a Player pass to discover here.
  */
 @RunInEdt(writeIntent = true)
 class GoldenTest : TypeWriterFixtureTestCase() {
@@ -84,12 +96,77 @@ class GoldenTest : TypeWriterFixtureTestCase() {
         )
     }
 
+    /**
+     * Spec section 12, acceptance test 1's closing property: "Base indent is applied on top of
+     * the above in both modes" (spec line 842). Reproduces `SnippetRunner.run`'s own sequence --
+     * parse into steps, then compute and apply base indent against a real destination caret --
+     * rather than calling [BaseIndent] in isolation the way `BaseIndentTest` does: this is the
+     * one place that proves the *parsed acceptance-test-1 payload*, not a synthetic snippet,
+     * survives indenting intact. The destination ("class Host {" / blank line / "}") is the exact
+     * fixture `BaseIndentTest.testBlankLineInsideClassBodyUsesTheContextIndent` already measured
+     * as a 4-space, column-0 context on this platform build -- reused rather than re-derived, and
+     * re-confirmed by this test's own run.
+     */
+    @Test
+    fun testAcceptanceOneCarriesBaseIndentIntoANestedDestination() {
+        val payload = typed("AT1indent.java", acceptanceOne, formatted = false)
+
+        val destination = fixture.configureByText(
+            "Dest.java",
+            // language="JAVA"
+            """
+            |class Host {
+            |<caret>
+            |}
+            """.trimMargin(),
+        )
+        val destinationEditor = fixture.editor
+        val offset = destinationEditor.caretModel.offset
+        val indent = BaseIndent.compute(fixture.project, destination, destinationEditor.document, offset)
+        val column = BaseIndent.caretColumn(destinationEditor.document, offset)
+        val indented = BaseIndent.apply(payload, indent, column)
+
+        // Generated and reviewed, never predicted: [BaseIndent.apply]'s per-line prefixing is a
+        // pure, already-unit-tested string transform (BaseIndentTest), but `indent` itself comes
+        // from the real CodeStyleManager -- captured from an actual run, then hand-verified line
+        // by line against acceptanceOne before committing, not typed from reasoning about what
+        // the formatter should return. See task-18-report.md for the capture and the check.
+        val expected =
+            "    public interface CourierRepository extends JpaRepository<Courier, Long> {\n" +
+                "\n" +
+                "        List<Courier> findAllByCity(String city);\n" +
+                "\n" +
+                "    // No need to define common CRUD methods manually \n" +
+                "    }\n" +
+                "\n" +
+                "    @Service\n" +
+                "    @Transactional(readOnly = true)\n" +
+                "    public class CourierService {\n" +
+                "\n" +
+                "        private final CourierRepository courierRepository;\n" +
+                "\n" +
+                "        public CourierService(CourierRepository courierRepository) {\n" +
+                "            this.courierRepository = courierRepository;\n" +
+                "        }"
+        assertEquals(
+            expected,
+            indented,
+            "base indent (\"$indent\", column $column) must be applied on top of the parsed payload -- got: $indented",
+        )
+    }
+
     @Test
     fun testGenericsAreNotParsedAsCommands() {
         // The v1 crash: JpaRepository<Courier, Long> matched its <...> command syntax.
         val out = typed("AT1c.java", acceptanceOne, formatted = true)
-        assertTrue(out.contains("JpaRepository<Courier, Long>"))
-        assertTrue(out.contains("List<Courier>"))
+        assertTrue(
+            out.contains("JpaRepository<Courier, Long>"),
+            "generics must type as plain text, not be parsed as a <...> command (the v1 crash) -- got: $out",
+        )
+        assertTrue(
+            out.contains("List<Courier>"),
+            "generics must type as plain text, not be parsed as a <...> command (the v1 crash) -- got: $out",
+        )
     }
 
     /** Acceptance test 3: the fixture that DOES discriminate the two modes. */
@@ -132,7 +209,11 @@ class GoldenTest : TypeWriterFixtureTestCase() {
             |    }
             |}
             """.trimMargin()
-        assertFalse(typed("AT3b.java", input, formatted = true).contains("\n\n"))
+        val out = typed("AT3b.java", input, formatted = true)
+        assertFalse(
+            out.contains("\n\n"),
+            "the formatter's own blank-line insertion between members must be reconciled away -- got: $out",
+        )
     }
 
     /** Acceptance test 2: Dockerfile -- line comments only, backslash continuations. */
@@ -169,7 +250,10 @@ class GoldenTest : TypeWriterFixtureTestCase() {
         assertTrue(out.startsWith("FROM"), "the marker line is consumed entirely")
         assertTrue(out.contains("# install the app"), "an ordinary comment is typed")
         assertEquals(2, out.split("\\\n").size - 1, "every continuation survives")
-        assertTrue(out.contains("[\"java\",\"-jar\",\"/app/app.jar\"]"))
+        assertTrue(
+            out.contains("[\"java\",\"-jar\",\"/app/app.jar\"]"),
+            "the ENTRYPOINT array must type exactly as written -- got: $out",
+        )
         assertEquals(input.replace("# tw: pause 500\n", ""), typed("Dockerfile", input, formatted = false))
 
         // Generated and reviewed, never predicted (plan Global Constraints): captured from a
