@@ -170,7 +170,7 @@ jobs:
       # are listed because the download directory is XDG-derived (~/.cache/... on the runners,
       # ~/.pluginVerifier on some setups); a path that does not exist is simply skipped.
       - name: Setup Plugin Verifier IDEs Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/pluginVerifier/ides
