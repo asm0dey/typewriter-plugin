@@ -28,6 +28,8 @@ dependencies {
         testFramework(TestFrameworkType.JUnit5)
         // Test-only: language plugins must never be reachable from the main compileClasspath.
         testBundledPlugin("com.intellij.java")
+        // Test-only: acceptance test 2 (Dockerfile golden test) needs Docker's FileType/formatter.
+        testBundledPlugin("Docker")
     }
 }
 
