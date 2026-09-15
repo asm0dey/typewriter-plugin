@@ -9,6 +9,8 @@
         <postStartupActivity implementation="com.github.asm0dey.typewriter.library.SnippetStartupActivity"/>
         <defaultHighlightingSettingProvider
             implementation="com.github.asm0dey.typewriter.ide.SnippetHighlightingSettingProvider"/>
+        <completion.contributor language="any"
+            implementationClass="com.github.asm0dey.typewriter.ide.MarkerCompletionContributor"/>
     </extensions>
 
     <applicationListeners>
