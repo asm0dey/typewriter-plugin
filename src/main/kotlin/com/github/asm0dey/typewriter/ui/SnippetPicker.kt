@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.IPopupChooserBuilder
@@ -82,7 +83,15 @@ class TypeSnippetPickerAction : AnAction(), DumbAware {
     }
 }
 
-/** Entry point for [SnippetDialog]: pick a snippet, then edit it and its timing. */
+/**
+ * Entry point for [SnippetDialog]: pick a snippet, then edit it and its timing.
+ *
+ * [SnippetDialog] requires a live [com.intellij.openapi.editor.Document] for the chosen snippet
+ * and does not itself handle the absence of one -- a binary file dropped into a snippet directory
+ * has none. Guarded here the same way [SnippetRunner.run] guards its own [SnippetLibrary]
+ * `textOf` lookup, so picking such a file reports a balloon instead of throwing an `NPE` out of
+ * the action.
+ */
 class EditSnippetAction : AnAction(), DumbAware {
 
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -90,8 +99,16 @@ class EditSnippetAction : AnAction(), DumbAware {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         snippetPopup(project, "Edit Snippet")
-            ?.setItemChosenCallback { snippet -> SnippetDialog(project, snippet).show() }
+            ?.setItemChosenCallback { snippet -> openDialog(project, snippet) }
             ?.createPopup()
             ?.showCenteredInCurrentWindow(project)
+    }
+
+    private fun openDialog(project: Project, snippet: Snippet) {
+        if (FileDocumentManager.getInstance().getDocument(snippet.file) == null) {
+            SnippetRunner.notify(project, "${snippet.relativePath} has no readable text", NotificationType.ERROR)
+            return
+        }
+        SnippetDialog(project, snippet).show()
     }
 }

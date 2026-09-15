@@ -48,43 +48,57 @@ class DirectiveHeaderTest : TypeWriterFixtureTestCase() {
         val text = DirectiveHeader.write("class A {}", directives, "tw:", java)
         assertEquals(directives, DirectiveHeader.read(text, "tw:"))
     }
+
+    @Test
+    fun testWriteLeavesTextUnchangedWhenSyntaxHasNoComments() {
+        val noComments = CommentSyntax(linePrefix = null, blockPrefix = null, blockSuffix = null)
+        val out = DirectiveHeader.write("class A {}", Directives(speedMs = 80), "tw:", noComments)
+        assertEquals("class A {}", out)
+    }
 }
 
 /**
- * [DirectiveHeader.resolve] is a pure decision over three [Directives] snapshots -- opened,
- * current (from the editor), and spinner -- so it needs no PSI fixture at all: a test needing no
- * PSI fixture extends nothing (plan "Test conventions").
+ * [DirectiveHeader.resolveField] is a pure decision over one field's opened/current/control
+ * values, so it needs no PSI fixture at all: a test needing no PSI fixture extends nothing (plan
+ * "Test conventions"). Each case names the field-level scenario from `resolveField`'s kdoc; the
+ * "neither changed, header had nothing" case is the actual regression this exists to prevent --
+ * see its comment below.
  */
-class DirectiveHeaderResolveTest {
+class DirectiveHeaderResolveFieldTest {
 
     @Test
-    fun testResolveWritesSpinnerWhenNeitherChanged() {
-        val d = Directives(speedMs = 80)
-        assertEquals(DirectiveHeader.Resolution.WRITE_SPINNER, DirectiveHeader.resolve(d, d, d))
+    fun testKeepsCurrentWhenNeitherHeaderNorControlChanged() {
+        val outcome = DirectiveHeader.resolveField(opened = 80, current = 80, controlChanged = false, controlValue = 80)
+        assertEquals(DirectiveHeader.FieldOutcome(80, conflicted = false), outcome)
     }
 
     @Test
-    fun testResolveWritesSpinnerWhenOnlySpinnerChanged() {
-        val opened = Directives(speedMs = 80)
-        val spinner = Directives(speedMs = 90)
-        assertEquals(DirectiveHeader.Resolution.WRITE_SPINNER, DirectiveHeader.resolve(opened, opened, spinner))
-    }
-
-    @Test
-    fun testResolveKeepsEditorWhenOnlyHeaderChanged() {
-        val opened = Directives(speedMs = 80)
-        val current = Directives(speedMs = 90)
-        assertEquals(DirectiveHeader.Resolution.KEEP_EDITOR, DirectiveHeader.resolve(opened, current, opened))
-    }
-
-    @Test
-    fun testResolveConflictsWhenBothChanged() {
-        val opened = Directives(speedMs = 80)
-        val current = Directives(speedMs = 90)
-        val spinner = Directives(speedMs = 70)
-        assertEquals(
-            DirectiveHeader.Resolution.CONFLICT_PREFER_EDITOR,
-            DirectiveHeader.resolve(opened, current, spinner),
+    fun testAbsentFieldStaysAbsentWhenNeitherChanged() {
+        // The regression: a spinner always shows *some* number (the app default, here 100) even
+        // when the header never had this field at all (opened/current == null). Confirming the
+        // outcome is null -- not the spinner's default -- is what proves opening a header-less
+        // snippet and clicking OK does not pin that default into the file.
+        val outcome = DirectiveHeader.resolveField<Int?>(
+            opened = null, current = null, controlChanged = false, controlValue = 100,
         )
+        assertEquals(DirectiveHeader.FieldOutcome<Int?>(null, conflicted = false), outcome)
+    }
+
+    @Test
+    fun testWritesControlValueWhenOnlyControlChanged() {
+        val outcome = DirectiveHeader.resolveField(opened = 80, current = 80, controlChanged = true, controlValue = 90)
+        assertEquals(DirectiveHeader.FieldOutcome(90, conflicted = false), outcome)
+    }
+
+    @Test
+    fun testKeepsHeaderEditWhenOnlyHeaderChanged() {
+        val outcome = DirectiveHeader.resolveField(opened = 80, current = 90, controlChanged = false, controlValue = 80)
+        assertEquals(DirectiveHeader.FieldOutcome(90, conflicted = false), outcome)
+    }
+
+    @Test
+    fun testConflictsAndPrefersHeaderWhenBothChanged() {
+        val outcome = DirectiveHeader.resolveField(opened = 80, current = 90, controlChanged = true, controlValue = 70)
+        assertEquals(DirectiveHeader.FieldOutcome(90, conflicted = true), outcome)
     }
 }
