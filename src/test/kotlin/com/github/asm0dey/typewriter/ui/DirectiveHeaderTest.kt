@@ -70,8 +70,9 @@ class DirectiveHeaderResolveFieldTest {
 
     @Test
     fun testKeepsCurrentWhenNeitherHeaderNorControlChanged() {
+        val expected = DirectiveHeader.FieldOutcome(80, conflicted = false)
         val outcome = DirectiveHeader.resolveField(opened = 80, current = 80, controlChanged = false, controlValue = 80)
-        assertEquals(DirectiveHeader.FieldOutcome(80, conflicted = false), outcome)
+        assertEquals(expected, outcome)
     }
 
     @Test
@@ -80,28 +81,32 @@ class DirectiveHeaderResolveFieldTest {
         // when the header never had this field at all (opened/current == null). Confirming the
         // outcome is null -- not the spinner's default -- is what proves opening a header-less
         // snippet and clicking OK does not pin that default into the file.
+        val expected = DirectiveHeader.FieldOutcome<Int?>(null, conflicted = false)
         val outcome = DirectiveHeader.resolveField<Int?>(
             opened = null, current = null, controlChanged = false, controlValue = 100,
         )
-        assertEquals(DirectiveHeader.FieldOutcome<Int?>(null, conflicted = false), outcome)
+        assertEquals(expected, outcome)
     }
 
     @Test
     fun testWritesControlValueWhenOnlyControlChanged() {
+        val expected = DirectiveHeader.FieldOutcome(90, conflicted = false)
         val outcome = DirectiveHeader.resolveField(opened = 80, current = 80, controlChanged = true, controlValue = 90)
-        assertEquals(DirectiveHeader.FieldOutcome(90, conflicted = false), outcome)
+        assertEquals(expected, outcome)
     }
 
     @Test
     fun testKeepsHeaderEditWhenOnlyHeaderChanged() {
+        val expected = DirectiveHeader.FieldOutcome(90, conflicted = false)
         val outcome = DirectiveHeader.resolveField(opened = 80, current = 90, controlChanged = false, controlValue = 80)
-        assertEquals(DirectiveHeader.FieldOutcome(90, conflicted = false), outcome)
+        assertEquals(expected, outcome)
     }
 
     @Test
     fun testConflictsAndPrefersHeaderWhenBothChanged() {
+        val expected = DirectiveHeader.FieldOutcome(90, conflicted = true)
         val outcome = DirectiveHeader.resolveField(opened = 80, current = 90, controlChanged = true, controlValue = 70)
-        assertEquals(DirectiveHeader.FieldOutcome(90, conflicted = true), outcome)
+        assertEquals(expected, outcome)
     }
 }
 
