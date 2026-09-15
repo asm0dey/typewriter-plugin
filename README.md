@@ -6,11 +6,29 @@ demos and screencasts.
 ## Quick start
 
 1. `Settings > Tools > TypeWriter` — set your snippet directory (default `~/.typewriter`).
+   To give one talk its own snippets that travel with its demo repo, set
+   `Settings > Tools > TypeWriter > Project` too (default `<project>/.typewriter`) — see
+   [Directories](#directories).
 2. `TypeWriter: New Snippet...` — name it and pick a file type. It writes the file and
-   opens it in a normal editor tab.
+   opens it in a normal editor tab. A file type with no usable extension (`.editorconfig`,
+   `Dockerfile`-style exact names) gets the snippet's name as a directory instead, e.g.
+   `01-setup/.editorconfig` — the exact filename still has to be exact.
 3. Edit it like any file. It is a file.
 4. `Settings > Keymap > Plugins > TypeWriter` — bind it. (Or skip binding and reach it
    through `TypeWriter: Type Snippet...`, a speed-search popup over every snippet.)
+
+## Directories
+
+Two directories contribute, and they layer:
+
+| Directory | Setting | Role |
+|---|---|---|
+| `~/.typewriter` | `Settings > Tools > TypeWriter` (default) | your reusable toolkit across talks |
+| `<project>/.typewriter` | `Settings > Tools > TypeWriter > Project` (default) | one talk's steps, committed with the demo repo |
+
+A project snippet **shadows** a global snippet at the same relative path — the same rule
+as `PATH` or a nested `.gitignore` — rather than replacing the whole global toolkit.
+Subdirectories are allowed (`jcon26/01-entity.kt`), so several talks can share one repo.
 
 ## Markers
 
@@ -37,6 +55,9 @@ In languages without block comments, one per line:
 | `pause <ms>` | wait |
 | `action <ActionId>` | run any IDE action |
 
+After `action`, typing resumes wherever the action actually leaves the caret — e.g. inside
+the parentheses a completion popup just inserted — not at the marker's original position.
+
 | Directive | Meaning |
 |---|---|
 | `raw` | do not format this snippet |
@@ -46,6 +67,11 @@ In languages without block comments, one per line:
 
 Write `tw::` to type a literal `tw:`.
 
+Markers only exist inside comments, so a language with **no comment syntax at all**
+(plain text, `.env`, and similar) cannot use them — see
+[Snippets without comments](#snippets-without-comments) below before you write `tw: pause 500`
+into one of those files expecting it to work.
+
 ## Formatting
 
 By default a snippet is formatted with the **target project's** code style before
@@ -53,8 +79,27 @@ typing, so a sloppy file produces clean output. The format step fixes indentatio
 and spacing; it never changes the number of lines or their order. `tw: raw` opts
 out, which is how you type ugly code and clean it up on camera.
 
+## Snippets without comments
+
+A plain-text, `.env`, or otherwise comment-less snippet has nowhere to put a marker —
+a command is a marker, and a marker is a comment. Writing `tw: pause 500` into one of
+these files does **nothing**: it is not recognized, and it types out as ordinary text
+during the run, right in front of your audience.
+
+For these files, timing (`speed`/`jitter`/`newline`, and `raw`) is set through the
+snippet dialog (`TypeWriter: Edit Snippet...`) instead of a marker, and is saved next to
+the snippet as `<snippet-filename>.twmeta`. `pause` and `action` are not available for
+these snippets — there is no marker to carry them.
+
 ## Driving a talk
 
 Name your project snippets `01-`, `02-` and bind `TypeWriter: Type Next` once.
 Project snippets (`<project>/.typewriter`) are the talk; global snippets
 (`~/.typewriter`) are your reusable toolkit and are not part of the sequence.
+
+`TypeWriter: Type Previous` steps back one slot the same way. Both stop at the ends of
+the sequence rather than wrapping around — pressing `Type Next` on the last snippet does
+nothing rather than silently restarting the talk from step one in front of an audience.
+
+If a run goes wrong, `TypeWriter: Undo Run` removes exactly what the last run typed
+(as long as nothing else has touched the document since).

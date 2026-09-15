@@ -2,10 +2,12 @@ package com.github.asm0dey.typewriter.ui
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.options.ConfigurationException
 import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -147,5 +149,26 @@ class TypeWriterConfigurableTest : TypeWriterFixtureTestCase() {
 
         assertEquals(555, configurable.speed.value)
         assertFalse(configurable.isModified)
+    }
+
+    // A blank sentinel makes MarkerParser's `trimmed.startsWith(sentinel)` true for every
+    // comment, silently consuming every comment as a marker instead of typing it -- rejected in
+    // apply() rather than substituted, so the mistake surfaces instead of hiding.
+    @Test
+    fun testApplyRejectsBlankSentinelAndDoesNotPersist() {
+        val configurable = configurableWithKnownState()
+        configurable.sentinel.text = "   "
+
+        assertThrows(ConfigurationException::class.java) { configurable.apply() }
+
+        assertEquals(knownState.sentinel, settings().state.sentinel)
+    }
+
+    @Test
+    fun testApplyRejectsEmptySentinel() {
+        val configurable = configurableWithKnownState()
+        configurable.sentinel.text = ""
+
+        assertThrows(ConfigurationException::class.java) { configurable.apply() }
     }
 }

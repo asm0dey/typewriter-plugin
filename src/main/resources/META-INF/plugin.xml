@@ -29,6 +29,10 @@ Recreate them as files in your snippet directory.</p>
                                  instance="com.github.asm0dey.typewriter.ui.TypeWriterConfigurable"
                                  id="typewriter.settings"
                                  displayName="TypeWriter"/>
+        <projectConfigurable parentId="typewriter.settings"
+                             instance="com.github.asm0dey.typewriter.ui.TypeWriterProjectConfigurable"
+                             id="typewriter.settings.project"
+                             displayName="Project"/>
     </extensions>
 
     <applicationListeners>
