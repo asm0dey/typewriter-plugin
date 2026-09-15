@@ -278,6 +278,57 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         assertInstanceOf(CancellationException::class.java, thrown)
     }
 
+    // Indentation is the one thing nobody types by hand -- Enter plus auto-indent supplies it --
+    // so a run that spells out eight leading spaces, one pause each, reads as scripted. nextChunk
+    // emits the whole leading run as ONE insertion instead, so it lands at once and costs one
+    // pause rather than one per space. Reported from a real runIde session: "it types spaces in
+    // the line beginnings, a thing I would never do".
+    @Test
+    fun testLeadingIndentIsEmittedAsOneChunk() {
+        val player = playerForDelayForTests()
+        // language=JAVA
+        val text = "class A {\n    int x;\n}"
+        assertEquals("c", player.nextChunk(text, 0), "an ordinary character is still one code point")
+        val indentStart = text.indexOf('\n') + 1
+        assertEquals(
+            "    ",
+            player.nextChunk(text, indentStart),
+            "the whole indent run goes in one insertion, not one space at a time",
+        )
+        assertEquals(
+            "i",
+            player.nextChunk(text, indentStart + 4),
+            "past the indent, typing returns to one code point at a time",
+        )
+    }
+
+    // Whitespace BETWEEN tokens is content a person really does type, so only a LINE START run is
+    // batched. If nextChunk batched any whitespace run, `int  x` would lose its per-character
+    // pacing mid-line, and a blank line's newline would be swallowed into the next line's indent.
+    @Test
+    fun testOnlyLeadingWhitespaceIsBatched() {
+        val player = playerForDelayForTests()
+        val text = "a  b\n\n    c"
+        assertEquals(" ", player.nextChunk(text, 1), "mid-line whitespace stays one character")
+        val blankLine = text.indexOf('\n') + 1
+        assertEquals(
+            "\n",
+            player.nextChunk(text, blankLine),
+            "a blank line's newline must not merge into the following indent",
+        )
+        assertEquals("    ", player.nextChunk(text, blankLine + 1), "the next line's indent is batched")
+    }
+
+    // The loop used to advance by Character.charCount over a code point; nextChunk must keep that
+    // property, or a surrogate pair (an emoji) would be inserted as two halves and the first would
+    // briefly render as a replacement character.
+    @Test
+    fun testASurrogatePairIsStillInsertedWhole() {
+        val player = playerForDelayForTests()
+        val emoji = "\uD83D\uDE80"
+        assertEquals(emoji, player.nextChunk("x$emoji", 1), "a surrogate pair is one chunk, not two halves")
+    }
+
     // delayFor (internal for this test) computes the per-character pacing: speedMs is the base,
     // newlineMs adds hesitation only for a newline chunk, jitterMs randomizes within a symmetric
     // band, and the whole thing is floored at one millisecond. Every other test in this class uses

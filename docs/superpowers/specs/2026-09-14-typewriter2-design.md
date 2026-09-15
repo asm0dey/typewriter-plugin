@@ -350,6 +350,16 @@ delay(base + jitter())
 Insertion is by **code point**, not `Char`. Inserting surrogate pairs one `Char`
 at a time places a broken half in the document.
 
+> **Amended.** One exception to code-point-at-a-time: a run of **leading
+> indentation** (spaces and tabs at the start of a line) is inserted as a single
+> chunk, taking one delay rather than one per space. Nobody types indentation --
+> Enter plus the editor's auto-indent supplies it -- so spelling it out one space
+> at a time is the clearest tell that a demo is scripted, which is the opposite of
+> what this plugin is for. Whitespace *between* tokens is content a person really
+> does type and is still emitted one code point at a time, and the run stops before
+> a newline so a blank line cannot merge into the next line's indent.
+> (`Player.nextChunk`; reported from a real session.)
+
 ### Independence from the user's typing settings
 
 `document.insertString` never reaches `TypedHandler`, so the IDE's smart-typing

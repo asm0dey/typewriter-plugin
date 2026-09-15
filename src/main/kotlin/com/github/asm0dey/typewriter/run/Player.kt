@@ -93,12 +93,11 @@ class Player(
                             onCaretDrift()
                             return
                         }
-                        val codePoint = step.text.codePointAt(i)
-                        val chunk = String(Character.toChars(codePoint))
+                        val chunk = nextChunk(step.text, i)
                         insert(chunk)
                         expectedOffset = editor.caretModel.offset
                         editor.scrollingModel.scrollToCaret(ScrollType.RELATIVE)
-                        i += Character.charCount(codePoint)
+                        i += chunk.length
                         delay(delayFor(chunk, timing))
                     }
                 }
@@ -139,6 +138,34 @@ class Player(
         } finally {
             invokingAction = false
         }
+    }
+
+    /**
+     * The next unit to insert at [i]: a whole run of leading indentation when [i] sits at the start
+     * of a line, otherwise a single code point.
+     *
+     * Indentation is the one thing nobody types. A person presses Enter and the editor supplies the
+     * indent, or they paste; watching a run spell out eight spaces one at a time is the clearest
+     * tell that a demo is scripted, which is exactly what this plugin exists to hide. Emitting the
+     * run as one insertion makes it appear at once, the way auto-indent does, and costs one pause
+     * instead of one per space.
+     *
+     * A single code point otherwise -- never a single `Char` -- so a surrogate pair (an emoji, say)
+     * is inserted whole rather than as two halves, the second of which would briefly render as a
+     * replacement character.
+     *
+     * Only spaces and tabs, and only at a line start: whitespace BETWEEN tokens is content a person
+     * really does type, and is left alone. The run deliberately stops before a newline, so a blank
+     * line stays a newline rather than merging into the next line's indent.
+     */
+    internal fun nextChunk(text: String, i: Int): String {
+        val atLineStart = i == 0 || text[i - 1] == '\n'
+        if (atLineStart) {
+            var j = i
+            while (j < text.length && (text[j] == ' ' || text[j] == '\t')) j++
+            if (j > i) return text.substring(i, j)
+        }
+        return String(Character.toChars(text.codePointAt(i)))
     }
 
     // Floored at 1ms, not 0: `delay(0)` never suspends (kotlinx.coroutines returns immediately
