@@ -148,6 +148,35 @@ jobs:
         with:
           cache-read-only: true
 
+      # Cache-key input. The key must change when the IDE set changes, since each `select` in
+      # build.gradle.kts resolves to the latest PATCH within its major and those move on
+      # JetBrains' schedule, not ours -- hashing build.gradle.kts alone would restore a stale
+      # cache forever while the new build was re-downloaded every run and never saved.
+      #
+      # printProductsReleases is NOT an exact mirror of the verified set: per the platform docs it
+      # filters by pluginConfiguration.ideaVersion, not by the pluginVerification.ides block, so it
+      # also lists majors we do not verify against. That is deliberate and safe in this direction
+      # -- a patch release in an unrelated major invalidates the cache one run early (one extra
+      # download), whereas a key that missed a real change would serve a stale cache forever. It
+      # downloads no IDEs itself.
+      - name: Resolve Verifier IDE List
+        run: |
+          ./gradlew printProductsReleases --quiet > verifier-ides.txt
+          cat verifier-ides.txt
+
+      # Cache the verifier's IDE downloads. Measured locally: ~4.4 GB extracted per IDE, and IDE
+      # content compresses to ~42%, so the two pinned builds are ~3.7 GB cached -- comfortably
+      # inside GitHub's 10 GB per-repository budget alongside the Gradle cache above. Both paths
+      # are listed because the download directory is XDG-derived (~/.cache/... on the runners,
+      # ~/.pluginVerifier on some setups); a path that does not exist is simply skipped.
+      - name: Setup Plugin Verifier IDEs Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pluginVerifier/ides
+            ~/.pluginVerifier/ides
+          key: plugin-verifier-ides-${{ runner.os }}-${{ hashFiles('verifier-ides.txt', 'build.gradle.kts') }}
+
       # Run Verify Plugin task and IntelliJ Plugin Verifier tool
       - name: Run Plugin Verification tasks
         run: ./gradlew verifyPlugin

@@ -1,4 +1,6 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.models.ProductRelease
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -63,7 +65,33 @@ intellijPlatform {
 
     pluginVerification {
         ides {
-            recommended()
+            // Two IDEs, not recommended(). Measured: recommended() resolves to FIVE builds
+            // (252, 253, 261, 262 and a 263 EAP), so every verify run downloaded ~22 GB of IDE
+            // distributions -- on every push and pull request -- and at ~9.2 GB compressed it
+            // could not be cached inside GitHub's 10 GB per-repository budget either. Pinning to
+            // the two ends of the supported range keeps the signal that actually matters (the
+            // oldest build we claim to support, and the newest release) while making the download
+            // set small enough to cache: ~8.8 GB extracted, ~3.7 GB compressed.
+            //
+            // Each select takes the latest PATCH within its major, so routine patch releases are
+            // picked up automatically and .github/workflows/build.yml's cache key follows them
+            // (it hashes printProductsReleases' output, not this file).
+            //
+            // The floor tracks sinceBuild in gradle.properties -- change one and change the other.
+            // The ceiling is bumped by hand when this plugin starts targeting a newer IDE; leaving
+            // it is a deliberate, visible decision rather than silent drift back to five IDEs.
+            select {
+                types = listOf(IntelliJPlatformType.IntellijIdeaUltimate)
+                channels = listOf(ProductRelease.Channel.RELEASE)
+                sinceBuild = "252"
+                untilBuild = "252.*"
+            }
+            select {
+                types = listOf(IntelliJPlatformType.IntellijIdeaUltimate)
+                channels = listOf(ProductRelease.Channel.RELEASE)
+                sinceBuild = "262"
+                untilBuild = "262.*"
+            }
         }
     }
 }
