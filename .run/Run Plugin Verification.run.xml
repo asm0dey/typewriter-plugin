@@ -1,0 +1,29 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run Verifications" type="GradleRunConfiguration" factoryName="Gradle">
+    <!-- IntelliJ Platform Gradle Plugin 2.x sandbox layout, see "Run IDE with Plugin.run.xml". -->
+    <log_file alias="idea.log" path="$PROJECT_DIR$/.intellijPlatform/sandbox/typewriter2/IU-2025.2.6.2/log/idea.log" />
+    <ExternalSystemSettings>
+      <option name="executionName" />
+      <option name="externalProjectPath" value="$PROJECT_DIR$" />
+      <option name="externalSystemIdString" value="GRADLE" />
+      <option name="scriptParameters" value="" />
+      <option name="taskDescriptions">
+        <list />
+      </option>
+      <option name="taskNames">
+        <list>
+          <!-- IntelliJ Platform Gradle Plugin 2.x renamed the 1.x runPluginVerifier task to
+               verifyPlugin. -->
+          <option value="verifyPlugin" />
+        </list>
+      </option>
+      <option name="vmOptions" value="" />
+    </ExternalSystemSettings>
+    <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
+    <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+    <DebugAllEnabled>false</DebugAllEnabled>
+    <method v="2">
+      <option name="Gradle.BeforeRunTask" enabled="true" tasks="clean" externalProjectPath="$PROJECT_DIR$" vmOptions="" scriptParameters="" />
+    </method>
+  </configuration>
+</component>

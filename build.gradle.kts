@@ -7,7 +7,10 @@ plugins {
 }
 
 group = "com.github.asm0dey"
-version = "1.0.0"
+// Ported from the v1 codebase (../typewriter-plugin): version is driven by the pluginVersion
+// gradle property (read by the release workflows to tag releases and pick a marketplace
+// channel), defaulting to the version this rewrite ships as its first release.
+version = providers.gradleProperty("pluginVersion").getOrElse("1.0.0")
 
 kotlin { jvmToolchain(21) }
 
@@ -41,6 +44,35 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion { sinceBuild = "252" }
     }
+
+    // Ported from ../typewriter-plugin/build.gradle.kts. Signing and publishing read their
+    // secrets from the environment (set as repository secrets on the marketplace-linked repo,
+    // never committed); the release channel is derived from pluginVersion's pre-release label
+    // (e.g. "1.1.0-beta.1" publishes to the "beta" channel), same as v1.
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+        channels = providers.gradleProperty("pluginVersion")
+            .map { listOf(it.substringAfter('-', "").substringBefore('.').ifEmpty { "default" }) }
+    }
+
+    pluginVerification {
+        ides {
+            recommended()
+        }
+    }
+}
+
+// Ported from ../typewriter-plugin/build.gradle.kts. The org.jetbrains.changelog plugin is
+// already applied above; this just configures it against our CHANGELOG.md.
+changelog {
+    groups.empty()
+    repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
 }
 
 tasks.test {
