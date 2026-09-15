@@ -8,6 +8,15 @@
   },
   "packageRules": [
     {
+      "description": "Kotlin is pinned by the TARGET IDE, not by us. gradle.properties sets kotlin.stdlib.default.dependency=false, so compiled output runs against the kotlin-stdlib bundled in the IntelliJ Platform rather than one we ship. A compiler newer than that stdlib emits coroutine debug metadata the runtime cannot read (IllegalStateException: Debug metadata version mismatch. Expected: 1, got 2), which throws inside the coroutines machinery on resume and HANGS the test suite rather than failing it cleanly. Renovate proposed exactly this in PR #80 (2.1.20 -> 2.4.20). Bump Kotlin only together with the IntelliJ Platform, by hand, after checking which Kotlin the target IDE bundles.",
+      "matchPackageNames": [
+        "org.jetbrains.kotlin.jvm",
+        "org.jetbrains.kotlin:**",
+        "org.jetbrains.kotlin.**"
+      ],
+      "enabled": false
+    },
+    {
       "description": "One PR for everything that is not a major bump. Majors stay on their own, and a security update still opens its own PR regardless of this rule.",
       "matchUpdateTypes": [
         "minor",
