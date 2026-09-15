@@ -72,14 +72,42 @@ object SnippetFileNames {
             .sortedBy { it.displayName }
 
     /**
-     * The exact filename [fileType] is associated with via an [ExactFileNameMatcher]
-     * (`Dockerfile`, `Makefile`, `.gitignore`), or `null` if it is matched by extension instead.
+     * The canonical exact filename [fileType] is associated with via one or more
+     * [ExactFileNameMatcher]s (`Dockerfile`, `Makefile`, `.gitignore`), or `null` if it is matched
+     * by extension instead.
+     *
+     * A [FileType] can register *several* exact-name matchers -- Docker's, for example, offers
+     * nine: `Dockerfile`, `Containerfile`, and seven dotted build-target variants
+     * (`Dockerfile.native`, `Dockerfile.jvm`, `Dockerfile.fast-jar`, `Dockerfile.legacy-jar`,
+     * `Dockerfile.native-micro`, `Dockerfile.native-distroless`, `Dockerfile.jlink`) -- confirmed
+     * by printing [FileTypeManager.getAssociations] for the Docker file type from a throwaway test
+     * run rather than assumed. The platform does not document or guarantee an order for
+     * [FileTypeManager.getAssociations]'s result, so picking `.firstOrNull()` off it (the original
+     * implementation here) is non-deterministic in principle even when it happens to work today --
+     * exactly what broke the moment Task 18 put the Docker plugin on the test classpath and
+     * `firstOrNull()` started returning `Dockerfile.native` instead of `Dockerfile`.
+     *
+     * Canonicalisation rule, applied as a three-level sort over every exact name offered:
+     * 1. **No dot beats a dot.** A dotted variant (`Dockerfile.native`) reads as a
+     *    specialisation of a base form, not a name in its own right -- the base form is what a
+     *    speaker means by "a Dockerfile snippet".
+     * 2. **Shortest wins among remaining candidates.** Docker still offers two no-dot names --
+     *    `Dockerfile` (10 chars) and `Containerfile` (13 chars) -- so dot-count alone does not
+     *    settle it; the shorter, more generic name is preferred.
+     * 3. **Alphabetical as the final tie-break**, purely so the result can never depend on
+     *    iteration order when a future [FileType] offers two no-dot names of equal length.
+     *
+     * This is a judgement call, not a platform contract -- there is no API signal for "the
+     * canonical one" among several exact-name matchers. It is documented here, deterministic, and
+     * happens to select `Dockerfile` for Docker's file type, which is what every existing test and
+     * the spec's own example (section 9: "prefills `Dockerfile`") expect.
      */
     fun exactNameOf(fileType: FileType): String? =
         FileTypeManager.getInstance().getAssociations(fileType)
             .filterIsInstance<ExactFileNameMatcher>()
+            .map { it.presentableString }
+            .sortedWith(compareBy<String> { it.contains('.') }.thenBy { it.length }.thenBy { it })
             .firstOrNull()
-            ?.presentableString
 
     /**
      * The chooser's display label for [fileType]: its [FileType.getDisplayName], with the default

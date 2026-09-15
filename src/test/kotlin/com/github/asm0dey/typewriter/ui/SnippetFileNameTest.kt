@@ -52,6 +52,23 @@ class SnippetFileNameTest : TypeWriterFixtureTestCase() {
         assertEquals("Dockerfile", SnippetFileNames.suggestName(dockerfile, "ignored"))
     }
 
+    // Fix-round regression test. Docker's file type registers NINE exact-name matchers (see
+    // exactNameOf's kdoc for the full observed list: Dockerfile, Containerfile, and seven dotted
+    // build-target variants). The original `.firstOrNull()` implementation was non-deterministic
+    // over that list -- it happened to return "Dockerfile" until Task 18 added the Docker plugin
+    // to the test classpath, at which point it started returning "Dockerfile.native" instead. This
+    // pins exactNameOf directly (not just suggestName's pass-through of it) to the canonical,
+    // deterministic choice.
+    @Test
+    fun testExactNameOfPicksTheCanonicalNameAmongSeveralExactMatchers() {
+        val dockerfile = FileTypeManager.getInstance().getFileTypeByFileName("Dockerfile")
+        if (dockerfile == PlainTextFileType.INSTANCE || dockerfile == UnknownFileType.INSTANCE) {
+            println("SKIPPED: Docker plugin absent, exact-name matching not exercised")
+            return
+        }
+        assertEquals("Dockerfile", SnippetFileNames.exactNameOf(dockerfile))
+    }
+
     // Re-suggesting a name for the type already typed into the stem must not double the
     // extension -- "01-entity.java" chosen with Java again must stay "01-entity.java", not
     // become "01-entity.java.java".
