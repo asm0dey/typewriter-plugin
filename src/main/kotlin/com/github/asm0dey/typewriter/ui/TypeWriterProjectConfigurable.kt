@@ -28,9 +28,11 @@ class TypeWriterProjectConfigurable(private val project: Project) : Configurable
     private val settings = project.getService(TypeWriterProjectSettings::class.java)
 
     internal val projectDir = TextFieldWithBrowseButton().apply {
+        // See TypeWriterConfigurable's browse button for why the title moves onto the descriptor.
         addBrowseFolderListener(
-            "Project Snippet Directory", null, project,
-            FileChooserDescriptorFactory.createSingleFolderDescriptor(),
+            project,
+            FileChooserDescriptorFactory.createSingleFolderDescriptor()
+                .withTitle("Project Snippet Directory"),
         )
     }
 

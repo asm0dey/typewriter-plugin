@@ -32,9 +32,14 @@ class TypeWriterConfigurable : Configurable {
     private val settings = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
 
     internal val globalDir = TextFieldWithBrowseButton().apply {
+        // Title on the DESCRIPTOR, not as a separate argument: the (title, description, project,
+        // descriptor) overload is deprecated and marked for removal, and it is also what logged
+        // "BrowseFolderRunnable - multiple selection not supported" on every CI run -- it builds a
+        // chooser whose selection mode does not match the single-folder descriptor it was handed.
         addBrowseFolderListener(
-            "Snippet Directory", null, null,
-            FileChooserDescriptorFactory.createSingleFolderDescriptor(),
+            null,
+            FileChooserDescriptorFactory.createSingleFolderDescriptor()
+                .withTitle("Snippet Directory"),
         )
     }
     internal val speed = JSpinner(SpinnerNumberModel(100, 0, 5000, 10))
