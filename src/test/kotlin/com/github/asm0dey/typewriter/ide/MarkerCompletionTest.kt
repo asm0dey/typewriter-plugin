@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.ide
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
+import com.intellij.codeInsight.lookup.LookupElementPresentation
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.testFramework.junit5.RunInEdt
 import java.nio.file.Files
@@ -16,7 +17,7 @@ import org.junit.jupiter.api.Test
  * directive names, and action ids, only inside a marker (a `PsiComment` whose body starts with the
  * configured sentinel) in a file under a configured snippet directory.
  *
- * The first four tests exercise [MarkerCompletionContributor.completionsFor] directly -- the pure
+ * The first four tests exercise [completionsFor] directly -- the pure
  * per-position logic the brief specifies verbatim. They say nothing about the two guards
  * ([SnippetFiles.isSnippet] and the `PsiComment` check) in [MarkerCompletionContributor.fillCompletionVariants]
  * itself, since that method is never invoked. The remaining tests close that gap by driving real
@@ -31,26 +32,26 @@ class MarkerCompletionTest : TypeWriterFixtureTestCase() {
 
     @Test
     fun testCommandNamesAreOfferedAfterTheSentinel() {
-        val names = MarkerCompletionContributor.completionsFor("tw: ", "tw:")
+        val names = completionsFor("tw: ", "tw:")
         assertTrue(names.containsAll(listOf("pause", "action", "raw", "speed", "jitter", "newline")))
     }
 
     @Test
     fun testActionIdsAreOfferedAfterAction() {
-        val ids = MarkerCompletionContributor.completionsFor("tw: action ", "tw:")
+        val ids = completionsFor("tw: action ", "tw:")
         assertTrue(ids.contains("ReformatCode"))
         assertTrue(ids.size > 100)
     }
 
     @Test
     fun testNumericArgumentsGetNoCompletions() {
-        assertTrue(MarkerCompletionContributor.completionsFor("tw: pause ", "tw:").isEmpty())
-        assertTrue(MarkerCompletionContributor.completionsFor("tw: speed ", "tw:").isEmpty())
+        assertTrue(completionsFor("tw: pause ", "tw:").isEmpty())
+        assertTrue(completionsFor("tw: speed ", "tw:").isEmpty())
     }
 
     @Test
     fun testNonMarkerCommentGetsNoCompletions() {
-        assertTrue(MarkerCompletionContributor.completionsFor("just a note", "tw:").isEmpty())
+        assertTrue(completionsFor("just a note", "tw:").isEmpty())
     }
 
     // ---- Real-invocation guard tests: prove fillCompletionVariants' two guards actually fire. ----
@@ -108,6 +109,37 @@ class MarkerCompletionTest : TypeWriterFixtureTestCase() {
         assertTrue(
             names.containsAll(listOf("pause", "action", "raw", "speed", "jitter", "newline")),
             "expected command/directive names inside a marker in a snippet file, got $names",
+        )
+    }
+
+    // Spec section 9's table: action ids are "presented with the action's own text and icon", not
+    // a bare id. Drives real completion (rather than the pure completionsFor helper, which only
+    // returns names) so the actual LookupElement presentation can be inspected.
+    //
+    // Does not pin down any single action id: the platform's own completion machinery arranges
+    // and can truncate a 2000+-entry candidate list (there are ~2750 registered action ids in
+    // this test sandbox) before it reaches the caller, so which ids survive is not stable across
+    // environments. What must hold regardless is that at least one of whatever *does* come back
+    // carries the enrichment -- if fillCompletionVariants regressed to a bare
+    // LookupElementBuilder.create(name) for every action id, none of them would.
+    @Test
+    fun testActionIdCompletionsCarryTheActionsTextAndIcon() {
+        val dir = Files.createTempDirectory("tw-cmp-action-presentation")
+        tempDirs.add(dir)
+        pointProjectAt(dir)
+
+        openRealFile(dir, "01.java", "// tw: action <caret>")
+
+        val elements = fixture.completeBasic() ?: emptyArray()
+        assertTrue(elements.isNotEmpty(), "expected action id completions to be offered")
+        val presentations = elements.map { LookupElementPresentation.renderElement(it) }
+        assertTrue(
+            presentations.any { it.icon != null },
+            "expected at least one action id completion to carry the action's icon",
+        )
+        assertTrue(
+            presentations.any { it.typeText != null },
+            "expected at least one action id completion to carry the action's own text",
         )
     }
 

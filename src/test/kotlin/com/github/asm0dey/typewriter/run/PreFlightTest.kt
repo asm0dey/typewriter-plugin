@@ -101,6 +101,19 @@ class PreFlightTest : TypeWriterFixtureTestCase() {
         assertTrue(checks.any { it is Check.Warning && it.message.contains("guard tripped") })
     }
 
+    // A blank (but non-null) formatWarning must not become an empty-text warning: the caller
+    // (SnippetActions) only ever sets this from a formatter result's warning message, which can
+    // legitimately be blank when there is nothing to say.
+    @Test
+    fun testBlankFormatWarningIsNotCarriedThrough() {
+        fixture.configureByText("T.java", "<caret>")
+        val checks = PreFlight.check(
+            fixture.editor, snippet(), program(Step.Type("x")), "   ",
+        )
+        assertFalse(checks.blocked())
+        assertFalse(checks.any { it is Check.Warning && it.message.isBlank() })
+    }
+
     @Test
     fun testTypingIntoTheSnippetsOwnFileIsAnError() {
         val s = snippet("self.java")

@@ -280,9 +280,9 @@ class PlayerTest : TypeWriterFixtureTestCase() {
 
     // delayFor (internal for this test) computes the per-character pacing: speedMs is the base,
     // newlineMs adds hesitation only for a newline chunk, jitterMs randomizes within a symmetric
-    // band, and the whole thing is clamped at zero. Every other test in this class uses
+    // band, and the whole thing is floored at one millisecond. Every other test in this class uses
     // Timing(0, 0, 0), which collapses all three knobs to zero and would not notice a newline
-    // hesitation attached to the wrong branch, a jitter sign flip, or a lost clamp.
+    // hesitation attached to the wrong branch, a jitter sign flip, or a lost floor.
     @Test
     fun testDelayForAddsNewlineHesitationOnlyToNewlines() {
         val timing = Timing(speedMs = 10, jitterMs = 0, newlineMs = 5)
@@ -300,6 +300,19 @@ class PlayerTest : TypeWriterFixtureTestCase() {
             assertTrue(delay >= Duration.ZERO, "expected >= 0, was $delay")
             assertTrue(delay <= 50.milliseconds, "expected <= 50ms, was $delay")
         }
+    }
+
+    // Pins the 1ms floor itself (previously only pinned indirectly, by a RunService integration
+    // test). newlineMs is added only for a "\n" chunk (see testDelayForAddsNewlineHesitationOnlyToNewlines
+    // above), so a non-newline character at Timing(0, 0, 300) computes a raw total of exactly
+    // zero -- this is the case that would silently pass with the floor reverted to Duration.ZERO,
+    // unlike testDelayForJitterStaysWithinTheSymmetricBandAndNeverGoesNegative's `>= Duration.ZERO`,
+    // which does not distinguish a zero delay from a floored one.
+    @Test
+    fun testDelayForFloorsAtOneMillisecondForANonNewlineCharacter() {
+        val timing = Timing(speedMs = 0, jitterMs = 0, newlineMs = 300)
+        val player = playerForDelayForTests()
+        assertEquals(1.milliseconds, player.delayFor("a", timing))
     }
 
     private fun playerForDelayForTests(): Player {

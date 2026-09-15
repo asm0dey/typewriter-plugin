@@ -24,6 +24,13 @@ import com.intellij.psi.util.PsiTreeUtil
  *
  * Completion is served by `CompletionService`, not the daemon, so Task 14's `SKIP_HIGHLIGHTING`
  * (which only suppresses the highlighting pass) does not suppress this.
+ *
+ * The platform instantiates a `CompletionContributor` on its own schedule, so this class carries
+ * no companion object: a platform inspection flags logic or state in an IDE extension's companion
+ * (only a logger and constants are allowed there), since it would mean class-initialization work
+ * and object retention at a moment the plugin does not control. [completionsFor] (the tested pure
+ * entry point) and its private helpers therefore live at file scope below instead -- don't move
+ * them back into a companion object.
  */
 class MarkerCompletionContributor : CompletionContributor() {
 
@@ -48,31 +55,51 @@ class MarkerCompletionContributor : CompletionContributor() {
             ?: return
         val beforeCaret = comment.text.take(caretInComment).removePrefix(opening)
 
-        for (name in completionsFor(beforeCaret.trimStart(), sentinel)) {
-            result.addElement(LookupElementBuilder.create(name))
+        val classified = classify(beforeCaret.trimStart(), sentinel)
+        for (name in classified.names) {
+            val element = if (classified.isActionIds) actionLookupElement(name) else LookupElementBuilder.create(name)
+            result.addElement(element)
         }
     }
+}
 
-    companion object {
-        /**
-         * [body] is the comment's body up to the caret, already stripped of delimiters. Returns
-         * the names to offer, or empty when the position takes a number or is not a marker at
-         * all.
-         */
-        fun completionsFor(body: String, sentinel: String): List<String> {
-            val trimmed = body.trimStart()
-            if (!trimmed.startsWith(sentinel)) return emptyList()
-            val rest = trimmed.removePrefix(sentinel).trimStart()
-            val words = rest.split(Regex("\\s+")).filter { it.isNotEmpty() }
-            val head = words.firstOrNull()
+/**
+ * [body] is the comment's body up to the caret, already stripped of delimiters. Returns
+ * the names to offer, or empty when the position takes a number or is not a marker at
+ * all.
+ */
+fun completionsFor(body: String, sentinel: String): List<String> = classify(body, sentinel).names
 
-            return when {
-                rest.isEmpty() || words.size == 1 && !rest.endsWith(" ") ->
-                    listOf("pause", "action") + Directives.NAMES
-                head == "action" -> ActionManager.getInstance().getActionIdList("")
-                head in setOf("pause", "speed", "jitter", "newline") -> emptyList()
-                else -> emptyList()
-            }
-        }
+/** [names] plus whether they are action ids (spec section 9: presented with the action's own text and icon). */
+private data class Classified(val names: List<String>, val isActionIds: Boolean)
+
+private fun classify(body: String, sentinel: String): Classified {
+    val trimmed = body.trimStart()
+    if (!trimmed.startsWith(sentinel)) return Classified(emptyList(), isActionIds = false)
+    val rest = trimmed.removePrefix(sentinel).trimStart()
+    val words = rest.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    val head = words.firstOrNull()
+
+    return when {
+        rest.isEmpty() || words.size == 1 && !rest.endsWith(" ") ->
+            Classified(listOf("pause", "action") + Directives.NAMES, isActionIds = false)
+        head == "action" -> Classified(ActionManager.getInstance().getActionIdList(""), isActionIds = true)
+        head in setOf("pause", "speed", "jitter", "newline") -> Classified(emptyList(), isActionIds = false)
+        else -> Classified(emptyList(), isActionIds = false)
     }
+}
+
+/**
+ * Spec section 9: action ids are "presented with the action's own text and icon", so a
+ * speaker can tell `ReformatCode` from `ReformatFile` without knowing the raw id. Falls
+ * back to a bare lookup element when the id no longer resolves to a registered action, or
+ * when that action has no icon.
+ */
+private fun actionLookupElement(actionId: String): LookupElementBuilder {
+    var builder = LookupElementBuilder.create(actionId)
+    val action = ActionManager.getInstance().getAction(actionId) ?: return builder
+    val presentation = action.templatePresentation
+    presentation.icon?.let { builder = builder.withIcon(it) }
+    presentation.text?.let { builder = builder.withTypeText(it) }
+    return builder
 }

@@ -81,7 +81,7 @@ object PreFlight {
         if (program.steps.isEmpty()) {
             checks += Check.Warning("${snippet.relativePath} is empty")
         }
-        formatWarning?.let { checks += Check.Warning(it) }
+        formatWarning?.takeUnless { it.isBlank() }?.let { checks += Check.Warning(it) }
 
         if (editor.caretModel.caretCount > 1) {
             checks += Check.Warning("multiple carets; only the primary caret is used")

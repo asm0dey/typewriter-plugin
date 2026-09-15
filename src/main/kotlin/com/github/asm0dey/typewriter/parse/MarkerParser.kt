@@ -16,41 +16,67 @@ object MarkerParser {
 
         for (marker in markers.sortedBy { it.startOffset }) {
             val (from, to) = consumedRange(text, marker)
-            if (from > cursor) {
-                val chunk = text.substring(cursor, from).replace("$sentinel:", sentinel)
-                if (chunk.isNotEmpty()) {
-                    steps += Step.Type(chunk)
-                    if (chunk.isNotBlank()) typedAnything = true
-                }
+            if (from > cursor && appendChunk(text.substring(cursor, from), sentinel, steps)) {
+                typedAnything = true
             }
-            for (line in marker.body.lines()) {
-                val trimmed = line.trim()
-                if (trimmed.isEmpty()) continue
-                if (!trimmed.startsWith(sentinel)) {
-                    errors += ParseError(marker.line, "marker body line has no \"$sentinel\": $trimmed")
-                    continue
-                }
-                val rest = trimmed.removePrefix(sentinel).trim()
-                when (val first = rest.substringBefore(' ').trim()) {
-                    "pause" -> parsePause(rest, marker, errors)?.let { steps += it }
-                    "action" -> parseAction(rest, marker, errors)?.let { steps += it }
-                    in Directives.NAMES -> {
-                        if (typedAnything) {
-                            errors += ParseError(marker.line, "directive \"$first\" must precede all typed text")
-                        } else {
-                            directives = applyDirectives(rest, directives, marker, errors)
-                        }
-                    }
-                    else -> errors += ParseError(marker.line, "unknown command or directive: \"$first\"")
-                }
-            }
+            directives = processMarkerBody(marker, sentinel, typedAnything, directives, steps, errors)
             cursor = to
         }
         if (cursor < text.length) {
-            val chunk = text.substring(cursor).replace("$sentinel:", sentinel)
-            if (chunk.isNotEmpty()) steps += Step.Type(chunk)
+            appendChunk(text.substring(cursor), sentinel, steps)
         }
         return Program(steps, directives, errors)
+    }
+
+    /**
+     * Processes one marker's body, line by line: dispatches `pause`/`action` commands into
+     * [steps] and collects directive updates into the returned [Directives]. [typedAnything] is
+     * only read here (never written) -- it governs whether a directive line is still legal at
+     * this point in the file (spec: directives must precede all typed text).
+     */
+    private fun processMarkerBody(
+        marker: RawMarker,
+        sentinel: String,
+        typedAnything: Boolean,
+        directives: Directives,
+        steps: MutableList<Step>,
+        errors: MutableList<ParseError>,
+    ): Directives {
+        var result = directives
+        for (line in marker.body.lines()) {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) continue
+            if (!trimmed.startsWith(sentinel)) {
+                errors += ParseError(marker.line, "marker body line has no \"$sentinel\": $trimmed")
+                continue
+            }
+            val rest = trimmed.removePrefix(sentinel).trim()
+            when (val first = rest.substringBefore(' ').trim()) {
+                "pause" -> parsePause(rest, marker, errors)?.let { steps += it }
+                "action" -> parseAction(rest, marker, errors)?.let { steps += it }
+                in Directives.NAMES -> {
+                    if (typedAnything) {
+                        errors += ParseError(marker.line, "directive \"$first\" must precede all typed text")
+                    } else {
+                        result = applyDirectives(rest, result, marker, errors)
+                    }
+                }
+                else -> errors += ParseError(marker.line, "unknown command or directive: \"$first\"")
+            }
+        }
+        return result
+    }
+
+    /**
+     * Unescapes the sentinel-escape ("tw:: " -> "tw: ") in [raw] and, if anything is left,
+     * appends it as a [Step.Type] to [steps]. Returns whether the appended chunk carried any
+     * non-whitespace content, for the caller to fold into `typedAnything`.
+     */
+    private fun appendChunk(raw: String, sentinel: String, steps: MutableList<Step>): Boolean {
+        val chunk = raw.replace("$sentinel:", sentinel)
+        if (chunk.isEmpty()) return false
+        steps += Step.Type(chunk)
+        return chunk.isNotBlank()
     }
 
     /** Spec section 5, "Whitespace consumption". */
