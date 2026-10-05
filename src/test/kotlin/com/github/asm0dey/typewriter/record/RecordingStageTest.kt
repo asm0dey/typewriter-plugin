@@ -8,6 +8,7 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.PlatformTestUtil
@@ -51,6 +52,16 @@ class RecordingStageTest : TypeWriterFixtureTestCase() {
             }
             assertEquals("class Foo {}", source.document.text)
         }
+    }
+
+    @Test
+    fun testDefaultFontSizeIsTheGlobalSchemeNotTheScaledEditor() {
+        fixture.configureByText("Foo.java", "class Foo {}")
+        val global = EditorColorsManager.getInstance().globalScheme.editorFontSize
+        // What the live editor reports under Presentation Mode / IDE zoom: already scaled.
+        (fixture.editor as EditorEx).setFontSize(global * 2)
+        assertEquals(global, defaultFontSize(0))
+        assertEquals(17, defaultFontSize(17))
     }
 
     @Test

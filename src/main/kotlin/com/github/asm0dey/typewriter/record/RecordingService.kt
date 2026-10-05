@@ -11,6 +11,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -25,6 +26,10 @@ import kotlin.coroutines.cancellation.CancellationException
 
 /** Notification content is HTML: escape [text] and keep its line breaks. */
 internal fun html(text: String): String = StringUtil.escapeXmlEntities(text).replace("\n", "<br>")
+
+/** The dialog's default font size: Settings > Editor > Font, which the stage scales by the IDE zoom itself. */
+internal fun defaultFontSize(saved: Int): Int =
+    saved.takeIf { it > 0 } ?: EditorColorsManager.getInstance().globalScheme.editorFontSize
 
 /**
  * Records a snippet to a video file. A recording is not a run: it types into its own offscreen
@@ -58,7 +63,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
             output = defaultOutput(settings.recordDir, snippet.file.nameWithoutExtension),
             width = settings.recordWidth,
             height = settings.recordHeight,
-            fontSize = settings.recordFontSize.takeIf { it > 0 } ?: prepared.editor.colorsScheme.editorFontSize,
+            fontSize = defaultFontSize(settings.recordFontSize),
             fps = settings.recordFps,
             holdBeforeMs = settings.recordHoldBeforeMs,
             holdAfterMs = settings.recordHoldAfterMs,
