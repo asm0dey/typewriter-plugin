@@ -40,6 +40,19 @@ class TypeWriterSettingsTest : TypeWriterFixtureTestCase() {
     }
 
     @Test
+    fun testRecordingDefaults() {
+        val state = TypeWriterSettings.State()
+        assertEquals("ffmpeg", state.ffmpegPath)
+        assertEquals("", state.recordDir)
+        assertEquals(1920, state.recordWidth)
+        assertEquals(1080, state.recordHeight)
+        assertEquals(0, state.recordFontSize)
+        assertEquals(60, state.recordFps)
+        assertEquals(1000, state.recordHoldBeforeMs)
+        assertEquals(2000, state.recordHoldAfterMs)
+    }
+
+    @Test
     fun testDefaultTimingMirrorsState() {
         val settings = TypeWriterSettings()
         settings.loadState(TypeWriterSettings.State(speedMs = 42, jitterMs = 7, newlineMs = 9))

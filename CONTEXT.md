@@ -72,6 +72,15 @@ pause, or an action.
 One execution of a program against one editor. A run can be aborted, and
 carries the typing speed in force for it.
 
+## Recording
+
+Playing a program against an offscreen copy of the target to produce a video.
+It shares the program, timing and base indent with a run, but it is not a run:
+the speaker's keystrokes do not abort it, `Undo Run` does not apply, and the
+real document is never written.
+
+_Avoid_: capture, screencast, recorded run
+
 ## Typed range
 
 The region of the target document a run has written so far. Distinct from the

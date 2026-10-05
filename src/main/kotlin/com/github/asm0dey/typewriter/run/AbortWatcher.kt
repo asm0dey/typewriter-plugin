@@ -1,9 +1,11 @@
 package com.github.asm0dey.typewriter.run
 
+import com.github.asm0dey.typewriter.record.RecordingStage
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.actionSystem.ex.AnActionListener
 import com.intellij.openapi.application.ApplicationManager
@@ -24,7 +26,9 @@ import com.intellij.openapi.application.ApplicationManager
  *
  * Two exemptions, both from spec section 7 "Abort": actions invoked by the run's own `action`
  * steps ([Player.invokingAction]), and any action whose id starts with `typewriter.` (the
- * plugin's own commands, including per-snippet play actions and `TypeWriter: Undo Run`).
+ * plugin's own commands, including per-snippet play actions and `TypeWriter: Undo Run`). A third,
+ * also section 7 ("a recording may run while a live run plays"): any event whose editor is a
+ * [RecordingStage]'s, tagged with [RecordingStage.STAGE].
  *
  * One watcher is scoped to one [player] (hence one run): [RunService] installs a fresh instance
  * per run, disposed when that run ends.
@@ -51,14 +55,18 @@ class AbortWatcher(
     }
 
     override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
-        if (isExempt(action)) return
+        if (isExempt(action) || isRecordingStage(event.dataContext)) return
         onAbort()
     }
 
     override fun beforeEditorTyping(c: Char, dataContext: DataContext) {
-        if (player.invokingAction) return
+        if (player.invokingAction || isRecordingStage(dataContext)) return
         onAbort()
     }
+
+    /** A recording's own action steps target its offscreen stage, and must not cancel this run (spec section 7). */
+    private fun isRecordingStage(dataContext: DataContext): Boolean =
+        CommonDataKeys.EDITOR.getData(dataContext)?.getUserData(RecordingStage.STAGE) == true
 
     private fun isExempt(action: AnAction): Boolean {
         if (player.invokingAction) return true

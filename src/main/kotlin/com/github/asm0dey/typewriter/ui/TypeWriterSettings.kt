@@ -18,6 +18,16 @@ class TypeWriterSettings : PersistentStateComponent<TypeWriterSettings.State> {
         var newlineMs: Int = 300,
         var sentinel: String = "tw:",
         var formatOnPlay: Boolean = true,
+        var ffmpegPath: String = "ffmpeg",
+        /** Blank = the OS video directory. */
+        var recordDir: String = "",
+        var recordWidth: Int = 1920,
+        var recordHeight: Int = 1080,
+        /** 0 = use the target editor's font size. */
+        var recordFontSize: Int = 0,
+        var recordFps: Int = 60,
+        var recordHoldBeforeMs: Int = 1000,
+        var recordHoldAfterMs: Int = 2000,
     )
 
     private var state = State()

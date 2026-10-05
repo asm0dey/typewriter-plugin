@@ -49,6 +49,7 @@ Recreate them as files in your snippet directory.</p>
         <action id="typewriter.undoRun" class="com.github.asm0dey.typewriter.library.UndoRunAction"/>
         <action id="typewriter.typeSnippet" class="com.github.asm0dey.typewriter.ui.TypeSnippetPickerAction"/>
         <action id="typewriter.editSnippet" class="com.github.asm0dey.typewriter.ui.EditSnippetAction"/>
+        <action id="typewriter.recordSnippet" class="com.github.asm0dey.typewriter.record.RecordSnippetAction"/>
 
         <!--
           Discoverability. Without this the plugin is reachable only through Find Action or a
@@ -69,6 +70,7 @@ Recreate them as files in your snippet directory.</p>
             <reference ref="typewriter.newSnippet"/>
             <reference ref="typewriter.typeSnippet"/>
             <reference ref="typewriter.editSnippet"/>
+            <reference ref="typewriter.recordSnippet"/>
             <separator/>
             <reference ref="typewriter.snippets"/>
         </group>

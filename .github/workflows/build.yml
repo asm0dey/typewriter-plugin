@@ -107,6 +107,10 @@ jobs:
           java-version: '21'
           cache: 'gradle'
 
+      # The recording tests encode with a real ffmpeg
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       # Run tests
       - name: Run Tests
         run: ./gradlew check

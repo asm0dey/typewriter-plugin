@@ -422,4 +422,16 @@ class PlayerTest : TypeWriterFixtureTestCase() {
         assertEquals("a", document.text)
         assertTrue(drifted)
     }
+
+    @Test
+    fun testCustomSleepReceivesEveryDelay() {
+        val slept = mutableListOf<Duration>()
+        fixture.configureByText("P.java", "")
+        runBlocking {
+            Player(fixture.project, fixture.editor, Any(), sleep = { slept += it })
+                .play(listOf(Step.Type("a\nb"), Step.Pause(250)), Timing(100, 0, 300))
+        }
+        assertEquals(listOf(100.milliseconds, 400.milliseconds, 100.milliseconds, 250.milliseconds), slept)
+        assertEquals("a\nb", fixture.editor.document.text)
+    }
 }

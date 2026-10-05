@@ -1,11 +1,14 @@
 package com.github.asm0dey.typewriter.ui
 
+import com.github.asm0dey.typewriter.record.describe
+import com.github.asm0dey.typewriter.record.locateFfmpeg
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.ui.components.JBCheckBox
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import javax.swing.JComponent
@@ -42,6 +45,14 @@ class TypeWriterConfigurable : Configurable {
                 .withTitle("Snippet Directory"),
         )
     }
+    internal val ffmpegPath = TextFieldWithBrowseButton().apply {
+        addBrowseFolderListener(
+            null,
+            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+                .withTitle("ffmpeg Executable"),
+        )
+    }
+    internal val ffmpegStatus = JBLabel()
     internal val speed = JSpinner(SpinnerNumberModel(100, 0, 5000, 10))
     internal val jitter = JSpinner(SpinnerNumberModel(20, 0, 5000, 5))
     internal val newline = JSpinner(SpinnerNumberModel(300, 0, 5000, 50))
@@ -58,6 +69,8 @@ class TypeWriterConfigurable : Configurable {
             .addLabeledComponent("Newline pause (ms):", newline)
             .addLabeledComponent("Marker sentinel:", sentinel)
             .addComponent(formatOnPlay)
+            .addLabeledComponent("ffmpeg path:", ffmpegPath)
+            .addComponentToRightColumn(ffmpegStatus)
             .panel
 
     // `with(settings.state)` brings State's globalDir/sentinel/formatOnPlay properties into
@@ -72,7 +85,8 @@ class TypeWriterConfigurable : Configurable {
             jitter.value != jitterMs ||
             newline.value != newlineMs ||
             this@TypeWriterConfigurable.sentinel.text != this.sentinel ||
-            this@TypeWriterConfigurable.formatOnPlay.isSelected != this.formatOnPlay
+            this@TypeWriterConfigurable.formatOnPlay.isSelected != this.formatOnPlay ||
+            this@TypeWriterConfigurable.ffmpegPath.text != this.ffmpegPath
     }
 
     // A blank sentinel makes `trimmed.startsWith(sentinel)` (MarkerParser) true for every
@@ -87,15 +101,18 @@ class TypeWriterConfigurable : Configurable {
             throw ConfigurationException("Marker sentinel must not be blank.")
         }
         settings.loadState(
-            TypeWriterSettings.State(
+            settings.state.copy(
                 globalDir = globalDir.text,
                 speedMs = speed.value as Int,
                 jitterMs = jitter.value as Int,
                 newlineMs = newline.value as Int,
                 sentinel = sentinel.text,
                 formatOnPlay = formatOnPlay.isSelected,
+                ffmpegPath = ffmpegPath.text,
             )
         )
+        // Saved even if it doesn't resolve: the user may be configuring a machine ffmpeg isn't on yet.
+        ffmpegStatus.text = locateFfmpeg(ffmpegPath.text).describe()
     }
 
     override fun reset() = with(settings.state) {
@@ -105,5 +122,7 @@ class TypeWriterConfigurable : Configurable {
         newline.value = newlineMs
         this@TypeWriterConfigurable.sentinel.text = this.sentinel
         this@TypeWriterConfigurable.formatOnPlay.isSelected = this.formatOnPlay
+        this@TypeWriterConfigurable.ffmpegPath.text = this.ffmpegPath
+        ffmpegStatus.text = ""
     }
 }
