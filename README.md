@@ -140,3 +140,56 @@ If a run goes wrong, `TypeWriter: Undo Run` removes exactly what the last run ty
 (as long as nothing else has touched the document since).
 
 Either directory is created for you the first time you add a snippet to it.
+
+## Recording a video
+
+TypeWriter can record a snippet to an `.mp4` or `.gif` — tab, gutter and editor — without
+you typing it live. Start it from `Tools > TypeWriter > Record Snippet to Video...` or from
+the **Record Video...** button in the snippet dialog (`TypeWriter: Edit Snippet...`), which
+saves the snippet first.
+
+The Record dialog asks for:
+
+- **Output**: an `.mp4` or `.gif` file. The default is `<snippet-name>.mp4` in the last
+  directory you used — the first time `~/Videos` (`~/Movies` on macOS).
+- **Size**: 1920×1080, 1280×720, or Custom (width and height must both be even).
+- **Editor font size**: same unit as Settings > Editor > Font; defaults to your editor's.
+- **FPS**: 60. GIF output is capped at 50 fps, because GIF frame delays are whole
+  centiseconds.
+- **Hold before** (1000 ms) and **hold after** (2000 ms): the still frames around the typing.
+
+Your values are remembered.
+
+Rendering is offscreen, in the background, with a progress bar and a Cancel button. The real
+file is never touched, and your IDE keystrokes don't stop it.
+
+### ffmpeg
+
+Recording needs [ffmpeg](https://ffmpeg.org/):
+
+```
+brew install ffmpeg
+sudo apt install ffmpeg
+winget install ffmpeg
+```
+
+Settings > Tools > TypeWriter has an ffmpeg path field and shows a status line when you
+apply it. A bare `ffmpeg` is found through your login shell's `PATH`, so Homebrew works even
+when the IDE is started from the Dock.
+
+### Known limits
+
+The recording is rendered offscreen, so some things a live run does can't happen. TypeWriter
+warns about such actions before it starts.
+
+- Popups don't appear.
+- `CodeCompletion` can't open a lookup offscreen: only a single-candidate auto-insert
+  completes, and `EditorChooseLookupItem` then does nothing.
+- `CodeInsightAction`s such as `GotoDeclaration` do nothing.
+- Only lexer highlighting is shown.
+- Chrome and font follow the IDE zoom.
+
+See [docs/adr/0001-offscreen-recording.md](docs/adr/0001-offscreen-recording.md) for why.
+
+To check a change to the renderer by eye, record one snippet in a light theme and one in a
+dark theme and look at the tab, the gutter and the colours.

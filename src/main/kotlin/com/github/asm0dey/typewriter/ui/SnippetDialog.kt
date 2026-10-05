@@ -7,6 +7,7 @@ import com.github.asm0dey.typewriter.library.SnippetRunner
 import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.parse.CommentSyntax
+import com.github.asm0dey.typewriter.record.RecordingService
 import com.intellij.lang.Language
 import com.intellij.lang.LanguageUtil
 import com.intellij.notification.NotificationType
@@ -356,7 +357,9 @@ class SnippetDialog private constructor(
     private val newline = JSpinner(SpinnerNumberModel(newlineBaseline, 0, 5000, 50))
     private val raw = JBCheckBox("Type as authored (raw)", openedDirectives.raw)
 
-    private var playOnClose = false
+    private enum class OnClose { NOTHING, PLAY, RECORD }
+
+    private var onClose = OnClose.NOTHING
 
     init {
         title = snippet?.let { "Snippet: ${it.relativePath}" } ?: "New TypeWriter Snippet"
@@ -403,7 +406,13 @@ class SnippetDialog private constructor(
         },
         object : AbstractAction("Play") {
             override fun actionPerformed(e: ActionEvent?) {
-                playOnClose = true
+                onClose = OnClose.PLAY
+                doOKAction()
+            }
+        },
+        object : AbstractAction("Record Video...") {
+            override fun actionPerformed(e: ActionEvent?) {
+                onClose = OnClose.RECORD
                 doOKAction()
             }
         },
@@ -424,12 +433,15 @@ class SnippetDialog private constructor(
         if (snippet == null && !materialise()) return
         saveDirectives()
         super.doOKAction()
-        if (playOnClose) {
+        if (onClose != OnClose.NOTHING) {
             // A tick after disposal: dialog teardown routes actions through the action system,
             // and the abort watcher cancels on any action (spec section 9, "Snippet dialog").
             ApplicationManager.getApplication().invokeLater {
                 val editor = FileEditorManager.getInstance(project).selectedTextEditor
-                snippet?.let { SnippetRunner.run(project, editor, it) }
+                snippet?.let {
+                    if (onClose == OnClose.PLAY) SnippetRunner.run(project, editor, it)
+                    else project.getService(RecordingService::class.java).start(editor, it)
+                }
             }
         }
     }

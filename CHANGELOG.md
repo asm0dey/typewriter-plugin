@@ -1,5 +1,11 @@
 # TypeWriter Changelog
 
+## Unreleased
+
+### Added
+
+- Record a snippet to MP4 or GIF — tab, gutter and editor, rendered offscreen — from `Tools > TypeWriter > Record Snippet to Video...` or the snippet dialog's **Record Video...** button. Needs ffmpeg.
+
 ## 1.0.1
 
 ### Fixed
