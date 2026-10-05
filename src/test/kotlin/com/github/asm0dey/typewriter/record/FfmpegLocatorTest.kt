@@ -60,4 +60,11 @@ class FfmpegLocatorTest {
         val file = fakeExe(dir, "ffmpeg", "echo 'ffmpeg version 7.1'; exit 3")
         assertEquals(FfmpegStatus.NotRunnable(file.toString()), locateFfmpeg(file.toString(), ""))
     }
+
+    @Test
+    fun testBareNameFindsExeOnWindows() {
+        fakeExe(dir, "ffmpeg.exe", "echo 'ffmpeg version 7.1 Copyright (c)'")
+        assertEquals(FfmpegStatus.Found(dir.resolve("ffmpeg.exe"), "7.1"), locateFfmpeg("ffmpeg", dir.toString(), windows = true))
+        assertEquals(FfmpegStatus.NotFound("ffmpeg"), locateFfmpeg("ffmpeg", dir.toString(), windows = false))
+    }
 }

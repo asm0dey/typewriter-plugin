@@ -183,4 +183,12 @@ class RecorderFfmpegTest : TypeWriterFixtureTestCase() {
         assertThrows(CancellationException::class.java) { runBlocking { sink.frame(ByteArray(640 * 360 * 3)) } }
         assertTrue(dir.listDirectoryEntries().isEmpty())
     }
+
+    @Test
+    fun testAbortNeverThrowsWhenThePartCannotBeDeleted() {
+        val dir = Files.createTempDirectory("tw-rec")
+        // A non-empty directory where the part file goes: deleting it throws, like a locked file on Windows.
+        Files.writeString(dir.resolve("demo.part.mp4").createDirectories().resolve("x"), "x")
+        FfmpegSink(Path.of("ffmpeg"), options(dir.resolve("demo.mp4"))).abort()
+    }
 }

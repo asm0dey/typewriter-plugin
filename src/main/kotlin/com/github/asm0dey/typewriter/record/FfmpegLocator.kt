@@ -1,6 +1,7 @@
 package com.github.asm0dey.typewriter.record
 
 import com.intellij.execution.configurations.PathEnvironmentVariableUtil
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.util.EnvironmentUtil
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,9 +25,13 @@ fun FfmpegStatus.describe(): String = when (this) {
  * even when the IDE was started from the Dock.
  */
 // ponytail: runs ffmpeg -version synchronously; move to a background task if Apply ever feels slow
-fun locateFfmpeg(value: String, pathEnv: String? = EnvironmentUtil.getValue("PATH")): FfmpegStatus {
+fun locateFfmpeg(
+    value: String, pathEnv: String? = EnvironmentUtil.getValue("PATH"), windows: Boolean = SystemInfo.isWindows,
+): FfmpegStatus {
     val path = if ('/' in value || '\\' in value) Path.of(value)
-    else PathEnvironmentVariableUtil.findInPath(value, pathEnv, null)?.toPath()
+    // findInPath matches the exact name only, and on Windows the file is ffmpeg.exe.
+    else (if (windows) listOf(value, "$value.exe") else listOf(value))
+        .firstNotNullOfOrNull { PathEnvironmentVariableUtil.findInPath(it, pathEnv, null) }?.toPath()
     if (path == null || !Files.exists(path)) return FfmpegStatus.NotFound(value)
     return try {
         val process = ProcessBuilder(path.toString(), "-version").redirectErrorStream(true).start()

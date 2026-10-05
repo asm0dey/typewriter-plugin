@@ -11,6 +11,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.concurrent.ConcurrentLinkedDeque
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.extension
 import kotlin.io.path.nameWithoutExtension
 
@@ -91,8 +92,13 @@ class FfmpegSink(private val ffmpeg: Path, private val options: RecordOptions) :
     @Synchronized
     override fun abort() {
         aborted = true
-        process?.destroyForcibly()
-        Files.deleteIfExists(part)
+        // Wait for the exit: on Windows the dying process still holds the part file open.
+        process?.destroyForcibly()?.waitFor(5, TimeUnit.SECONDS)
+        try {
+            Files.deleteIfExists(part)
+        } catch (_: IOException) {
+            // abort runs from catch blocks and must never throw; a leftover part file is harmless
+        }
     }
 
     private fun failure(p: Process, wait: Boolean = true): FfmpegFailed {
