@@ -50,15 +50,17 @@ The target is always the selected text editor and its caret, as for a live run.
 
 | Field | Default |
 |---|---|
-| Output file (save chooser, `.mp4` or `.gif`) | `<snippet-name>.mp4` in the project base directory |
+| Output file (save chooser, `.mp4` or `.gif`) | `<snippet-name>.mp4` in the last directory used for a recording; first time, the OS user video directory (`~/Videos`, `~/Movies` on macOS) |
 | Size | `1920×1080`; also `1280×720`, custom W×H |
-| Editor font size | current editor font size |
+| Editor font size | current editor font size — the same unit as `Settings > Editor > Font`, so 14 here looks like 14 in the IDE |
 | FPS | 60 |
 | Hold before typing | 1 s |
 | Hold after typing | 2 s |
 
 - Custom W and H must be even (required by `yuv420p`); the dialog validates it.
-- The dialog remembers the last values (application-level settings).
+- The dialog remembers the last values, including the output directory
+  (application-level settings). Videos are build output, so the default never
+  points into the project.
 - The save chooser's own overwrite confirmation is the only overwrite prompt.
 
 ### Rendering
@@ -107,7 +109,9 @@ always types what a live run would.
 - **Document copy:** a `LightVirtualFile` with the target file's name, file
   type and current text, so PSI exists and actions such as `ReformatCode` work.
 - **Editor:** an `EditorEx` from `EditorFactory` over that document:
-  - the current global colour scheme, with the chosen font size;
+  - the current global colour scheme, with the chosen font size. The video
+    always uses the current IDE theme and scheme; a different look means
+    switching theme and recording again;
   - gutter with line numbers;
   - caret at the live caret's offset;
   - soft-wrap and whitespace display copied from the live editor;
@@ -116,6 +120,12 @@ always types what a live run would.
   name and the editor component.
 - The `JBTabs` component is sized to W×H and validated (laid out) before the
   first frame.
+- `JBTabs` sits inside a parent panel implementing `UiDataProvider` that
+  supplies `PROJECT`. A detached component otherwise has no project in its
+  data context, so `PSI_FILE` is null and actions such as `ReformatCode`
+  silently do nothing.
+- Layout is done by hand (`setSize` then `validate()`): `revalidate()` never
+  runs for a component with no window.
 - All of the above are owned by one `Disposable`, disposed on every exit path.
 
 ### Driving it: the virtual clock
@@ -153,7 +163,11 @@ Worked example (speed 100 ms, jitter ±20 ms, 60 fps — frame every 16.67 ms):
 
 No character appears more than one frame (16.7 ms) late.
 
-The caret is always painted (no blinking), so it cannot flicker between frames.
+The editor never paints its caret here: `EditorPainter` paints it only when the
+editor is the keyboard focus owner, which a component with no window can never
+be. The recorder draws the caret itself after `paint`, from
+`getCaretLocations(false)`, in the scheme's caret colour and the editor's caret
+shape (line or block). It never blinks, so it cannot flicker between frames.
 
 Caret-drift detection in `Player` stays active and is harmless: nothing else
 moves the offscreen caret.
@@ -177,8 +191,17 @@ moves the offscreen caret.
 
 ### Known limits (documented in the README)
 
-- Popups (completion lookups, intention bulbs) are separate windows and do not
-  appear. An action's effect on the text does.
+- Popups (completion lookups, intention bulbs) do not appear.
+- `CodeCompletion` cannot open a lookup on a component with no window, so only
+  a single-candidate auto-insert completes; `EditorChooseLookupItem` then has
+  no lookup and does nothing.
+- `CodeInsightAction`s (e.g. `GotoDeclaration`) return early when the editor
+  is not showing.
+- None of these reach the speaker's real editor: the data context resolves
+  only to the offscreen one.
+- The editor font and all chrome (tab height, gutter icons, padding) follow the
+  IDE zoom, as on screen. The font-size field is in the same unit as
+  `Settings > Editor > Font`; there is no exact-pixel mode.
 - Only lexer-based highlighting is shown; semantic highlighting and error
   stripes need the daemon, which does not run on a hidden editor.
 
@@ -221,13 +244,15 @@ target only after ffmpeg exits 0.
 |---|---|
 | ffmpeg not found | The configured value is resolved (section 3, "Settings") and `<resolved> -version` run before building components. On failure: error notification naming the value tried, with an **Open Settings** link to `Settings > Tools > TypeWriter`; nothing rendered. |
 | Pre-flight blocked | Same notifications as a live run (from `prepare`); nothing rendered. |
+| Action that cannot run offscreen | Pre-flight **warning** (recording continues), naming each `action` step whose ID is a completion action (`CodeCompletion`, `SmartTypeCompletion`, `EditorChooseLookupItem*`) or whose action is a `CodeInsightAction` (checked at runtime): "the video may differ from a live run at `action X`". |
 | ffmpeg exits non-zero | Temp file deleted; error notification with the last ~20 stderr lines. |
 | Cancel | Coroutine cancelled, process destroyed, temp file deleted. No notification. |
 | Exception mid-render | Same cleanup as Cancel, then an error notification. |
 
-Recording is independent of live runs: it does not use `RunService` or
+A recording is not a run (see `CONTEXT.md`): it does not use `RunService` or
 `AbortWatcher`. Typing or Escape in the IDE does not stop it; only Cancel does.
-A recording may run while a live run is playing.
+A recording may run while a live run is playing, and several recordings may
+run at once — each owns its own offscreen editor and ffmpeg process.
 
 ## 8. Testing
 
@@ -241,7 +266,8 @@ the encoder test runs rather than skips.
 | `FrameClockTest` | Virtual time → frame count: the section 5 table at 60 fps; holds add `fps × seconds` frames | no |
 | `FfmpegArgsTest` | MP4 and GIF argument lists; odd W×H rejected; format from extension | no |
 | `FfmpegLocatorTest` | Bare name resolved via `findInPath`; value with a separator used as-is; missing → `not found`; non-executable file → `not runnable`; version line parsed from `-version` output | no (fake executables in a temp dir) |
-| `RecorderTest` | Into an in-memory sink: source document unchanged; offscreen copy ends with the expected text; frame count matches; every frame is W×H; a long snippet scrolls (visible area moves) | no |
+| `RecordingPreFlightTest` | `action CodeCompletion` and a `CodeInsightAction` produce one warning each naming the step; `action ReformatCode` produces none; warnings never block | no |
+| `RecorderTest` | Into an in-memory sink: source document unchanged; offscreen copy ends with the expected text; frame count matches; every frame is W×H; a long snippet scrolls (visible area moves); `action ReformatCode` reformats the offscreen copy (proves `PROJECT` is supplied) | no |
 | `RecorderFfmpegTest` | 3-line snippet to `.mp4` and `.gif` in a temp dir; `ffprobe` confirms size and duration; no `.part` left. Bogus ffmpeg path → clean failure, temp file removed | yes |
 
 Manual check (README): record one snippet in a light and a dark theme and
