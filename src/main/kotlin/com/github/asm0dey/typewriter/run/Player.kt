@@ -38,11 +38,15 @@ import kotlin.time.Duration.Companion.milliseconds
  *
  * Threading: [play] is EDT-only, asserted at its entry -- see the assertion's own comment for why
  * the requirement is declared here and not left to [RunService]'s kdoc.
+ *
+ * [sleep] is how the player waits between chunks: recording passes a virtual-clock sleep, live
+ * runs keep the real `delay`.
  */
 class Player(
     private val project: Project,
     private val editor: Editor,
     private val runId: Any,
+    private val sleep: suspend (Duration) -> Unit = { delay(it) },
 ) {
     /** Set while this player invokes an IDE action, so the abort watcher ignores it. */
     @Volatile
@@ -67,7 +71,7 @@ class Player(
             // every delay in it is zero.
             currentCoroutineContext().ensureActive()
             when (step) {
-                is Step.Pause -> delay(step.millis.milliseconds)
+                is Step.Pause -> sleep(step.millis.milliseconds)
                 is Step.Action -> {
                     runAction(step.actionId)
                     // Deliberately editor.caretModel.offset, not marker.endOffset -- do not
@@ -98,7 +102,7 @@ class Player(
                         expectedOffset = editor.caretModel.offset
                         editor.scrollingModel.scrollToCaret(ScrollType.RELATIVE)
                         i += chunk.length
-                        delay(delayFor(chunk, timing))
+                        sleep(delayFor(chunk, timing))
                     }
                 }
             }
