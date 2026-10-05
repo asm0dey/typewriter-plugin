@@ -17,7 +17,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.platform.ide.progress.withBackgroundProgress
-import com.intellij.platform.util.progress.reportRawProgress
+import com.intellij.platform.util.progress.reportSequentialProgress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,7 +102,11 @@ class RecordingService(private val project: Project, private val scope: Coroutin
 
         scope.launch {
             withBackgroundProgress(project, "Recording ${snippet.relativePath}", cancellable = true) {
-                reportRawProgress { reporter ->
+                reportSequentialProgress { reporter ->
+                    // reportRawProgress would be the direct fit, but it inlines an @ApiStatus.Internal
+                    // handle into this class and the plugin verifier rejects it. Whole percents, and
+                    // only ever forward: nextStep needs a strictly increasing end fraction.
+                    var percent = 0
                     val sink = FfmpegSink(status.path, options)
                     val failure = runRecording(sink) {
                         withContext(Dispatchers.EDT) {
@@ -112,7 +116,11 @@ class RecordingService(private val project: Project, private val scope: Coroutin
                                     project, prepared.editor, options.width, options.height, options.fontSize, disposable,
                                 )
                                 record(project, stage, prepared.steps, prepared.timing, options, sink) {
-                                    reporter.fraction(it)
+                                    val next = (it * 100).toInt()
+                                    if (next > percent) {
+                                        percent = next
+                                        reporter.nextStep(next)
+                                    }
                                 }
                             } finally {
                                 Disposer.dispose(disposable)
@@ -121,7 +129,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
                     }
                     if (failure != null) {
                         SnippetRunner.notify(project, html(failure), NotificationType.ERROR)
-                        return@reportRawProgress
+                        return@reportSequentialProgress
                     }
                     SnippetRunner.notify(
                         project, html("Recorded ${options.output.fileName}"), NotificationType.INFORMATION,
