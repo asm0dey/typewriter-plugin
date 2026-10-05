@@ -37,7 +37,13 @@ class RecordingStage(project: Project, source: Editor, width: Int, height: Int, 
         val sourceFile = FileDocumentManager.getInstance().getFile(source.document)
         val name = sourceFile?.name ?: "untitled"
         val fileType = sourceFile?.fileType ?: PlainTextFileType.INSTANCE
-        val file = LightVirtualFile(name, fileType, source.document.text)
+        // A live run replaces the selection before typing (RunService.replaceSelection), so the copy starts that way.
+        val selection = source.selectionModel
+        val text = source.document.text
+        val (initialText, caret) =
+            if (selection.hasSelection()) text.removeRange(selection.selectionStart, selection.selectionEnd) to selection.selectionStart
+            else text to source.caretModel.offset
+        val file = LightVirtualFile(name, fileType, initialText)
         val document = FileDocumentManager.getInstance().getDocument(file)!!
         editor = EditorFactory.getInstance().createEditor(document, project, file, false) as EditorEx
         Disposer.register(parent) { EditorFactory.getInstance().releaseEditor(editor) }
@@ -48,7 +54,7 @@ class RecordingStage(project: Project, source: Editor, width: Int, height: Int, 
         editor.scrollingModel.disableAnimation()
         // EditorEx.setFontSize writes the editor's own scheme delegate, never the global scheme.
         editor.setFontSize(fontSize * UISettingsUtils.getInstance().currentIdeScale)
-        editor.caretModel.moveToOffset(source.caretModel.offset)
+        editor.caretModel.moveToOffset(caret)
 
         val tabs = JBTabsFactory.createEditorTabs(project, parent)
         tabs.addTab(TabInfo(editor.component).setText(name).setIcon(fileType.icon))

@@ -14,6 +14,7 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -52,6 +53,17 @@ class RecordingStageTest : TypeWriterFixtureTestCase() {
             }
             assertEquals("class Foo {}", source.document.text)
         }
+    }
+
+    @Test
+    fun testSelectionIsRemovedLikeALiveRun() {
+        fixture.configureByText("Foo.java", "class Foo {<selection>int old;<caret></selection>}")
+        withStage { stage ->
+            assertEquals("class Foo {}", stage.editor.document.text)
+            assertEquals("class Foo {".length, stage.editor.caretModel.offset)
+            assertFalse(stage.editor.selectionModel.hasSelection())
+        }
+        assertEquals("class Foo {int old;}", fixture.editor.document.text)
     }
 
     @Test
