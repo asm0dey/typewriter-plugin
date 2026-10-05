@@ -171,4 +171,45 @@ class TypeWriterConfigurableTest : TypeWriterFixtureTestCase() {
 
         assertThrows(ConfigurationException::class.java) { configurable.apply() }
     }
+
+    @Test
+    fun testApplyKeepsRecordingFields() {
+        val configurable = configurableWithKnownState()
+        settings().state.recordWidth = 1280
+        settings().state.recordFps = 30
+        settings().state.recordDir = "/x"
+
+        configurable.reset()
+        configurable.apply()
+
+        assertEquals(1280, settings().state.recordWidth)
+        assertEquals(30, settings().state.recordFps)
+        assertEquals("/x", settings().state.recordDir)
+    }
+
+    @Test
+    fun testFfmpegPathRoundTrips() {
+        val configurable = configurableWithKnownState()
+        configurable.ffmpegPath.text = "/opt/ff/ffmpeg"
+        configurable.apply()
+        assertEquals("/opt/ff/ffmpeg", settings().state.ffmpegPath)
+
+        configurable.reset()
+        assertFalse(configurable.isModified)
+        configurable.ffmpegPath.text = "/other/ffmpeg"
+        assertTrue(configurable.isModified)
+    }
+
+    @Test
+    fun testApplyShowsFfmpegStatusAndStillSaves() {
+        val configurable = configurableWithKnownState()
+        configurable.ffmpegPath.text = "/nonexistent/ffmpeg"
+
+        configurable.apply()
+
+        assertEquals("/nonexistent/ffmpeg", settings().state.ffmpegPath)
+        assertEquals("not found: /nonexistent/ffmpeg", configurable.ffmpegStatus.text)
+        configurable.reset()
+        assertEquals("", configurable.ffmpegStatus.text)
+    }
 }
