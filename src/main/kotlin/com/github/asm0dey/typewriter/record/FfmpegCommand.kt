@@ -18,16 +18,22 @@ private const val GIF_FILTER = "split[a][b];[a]palettegen=stats_mode=diff[p];[b]
 
 fun ffmpegArgs(ffmpeg: Path, width: Int, height: Int, fps: Int, format: VideoFormat, output: Path): List<String> {
     // -y: stdin is our frame pipe, ffmpeg must never prompt on it. -loglevel error: keep stderr to lines worth showing.
-    val input = listOf(
-        ffmpeg.toString(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
-        "-s", "${width}x$height", "-r", "$fps", "-i", "-",
-    )
-    val out = when (format) {
-        VideoFormat.MP4 -> listOf("-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium", "-movflags", "+faststart")
-        // GIF delays are whole centiseconds and browsers clamp delays under 2cs, so cap the rate at 50.
-        VideoFormat.GIF -> listOf("-vf", GIF_FILTER, "-r", "${minOf(fps, 50)}")
+    return buildList {
+        addAll(
+            listOf(
+                ffmpeg.toString(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24",
+                "-s", "${width}x$height", "-r", "$fps", "-i", "-",
+            )
+        )
+        when (format) {
+            VideoFormat.MP4 -> addAll(
+                listOf("-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "medium", "-movflags", "+faststart")
+            )
+            // GIF delays are whole centiseconds and browsers clamp delays under 2cs, so cap the rate at 50.
+            VideoFormat.GIF -> addAll(listOf("-vf", GIF_FILTER, "-r", "${minOf(fps, 50)}"))
+        }
+        add(output.toString())
     }
-    return input + out + output.toString()
 }
 
 fun sizeError(width: Int, height: Int): String? = when {
