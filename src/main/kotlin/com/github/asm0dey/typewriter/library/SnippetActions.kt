@@ -200,10 +200,11 @@ object SnippetRunner {
         return Prepared(target, steps, timing)
     }
 
-    fun notify(project: Project, message: String, type: NotificationType) {
+    fun notify(project: Project, message: String, type: NotificationType, vararg actions: AnAction) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup(GROUP)
             .createNotification(message, type)
+            .addActions(actions.asList())
             .notify(project)
     }
 }

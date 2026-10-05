@@ -20,12 +20,13 @@ import java.awt.Component
 import javax.swing.JList
 
 /**
- * Shared popup scaffolding for [TypeSnippetPickerAction] and [EditSnippetAction]: every snippet
+ * Shared popup scaffolding for [TypeSnippetPickerAction], [EditSnippetAction] and
+ * [com.github.asm0dey.typewriter.record.RecordSnippetAction]: every snippet
  * from both directories, filterable by [Snippet.relativePath], rendered by that same relative
  * path rather than [Snippet]'s own `toString()` -- which would otherwise leak the raw
  * `Snippet(id=..., file=..., fileType=..., ...)` data-class dump into the popup.
  */
-private fun snippetPopup(project: Project, title: String): IPopupChooserBuilder<Snippet>? {
+internal fun snippetPopup(project: Project, title: String): IPopupChooserBuilder<Snippet>? {
     val snippets = SnippetDirs.all(project)
     if (snippets.isEmpty()) {
         SnippetRunner.notify(project, "no snippets found", NotificationType.WARNING)
