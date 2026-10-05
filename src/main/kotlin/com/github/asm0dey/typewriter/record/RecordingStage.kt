@@ -5,6 +5,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataSink
 import com.intellij.openapi.actionSystem.UiDataProvider
+import com.intellij.openapi.command.undo.UndoUtil
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.colors.EditorColors
@@ -51,6 +52,7 @@ class RecordingStage(project: Project, source: Editor, width: Int, height: Int, 
             else text to source.caretModel.offset
         val file = LightVirtualFile(name, fileType, initialText)
         val document = FileDocumentManager.getInstance().getDocument(file)!!
+        UndoUtil.disableUndoFor(document)
         editor = EditorFactory.getInstance().createEditor(document, project, file, false) as EditorEx
         editor.putUserData(STAGE, true)
         Disposer.register(parent) { EditorFactory.getInstance().releaseEditor(editor) }

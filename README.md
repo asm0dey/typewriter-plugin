@@ -151,9 +151,10 @@ saves the snippet first.
 The Record dialog asks for:
 
 - **Output**: an `.mp4` or `.gif` file. The default is `<snippet-name>.mp4` in the last
-  directory you used — the first time `~/Videos` (`~/Movies` on macOS).
+  directory you used — the first time `~/Videos` (`~/Movies` on macOS), or your home
+  directory if that doesn't exist.
 - **Size**: 1920×1080, 1280×720, or Custom (width and height must both be even).
-- **Editor font size**: same unit as Settings > Editor > Font; defaults to your editor's.
+- **Font size**: same unit as Settings > Editor > Font; defaults to your editor's.
 - **FPS**: 60. GIF output is capped at 50 fps, because GIF frame delays are whole
   centiseconds.
 - **Hold before** (1000 ms) and **hold after** (2000 ms): the still frames around the typing.

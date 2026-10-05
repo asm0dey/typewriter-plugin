@@ -32,6 +32,27 @@ internal fun defaultFontSize(saved: Int): Int =
     saved.takeIf { it > 0 } ?: EditorColorsManager.getInstance().globalScheme.editorFontSize
 
 /**
+ * Runs [block], aborting [sink] unless it completes -- even on an [Error]. Returns the failure to
+ * notify, or null on success; a cancellation is rethrown without one.
+ */
+internal suspend fun runRecording(sink: FrameSink, block: suspend () -> Unit): String? {
+    var done = false
+    try {
+        block()
+        done = true
+        return null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: FfmpegFailed) {
+        return "recording failed:\n${e.stderrTail}"
+    } catch (e: Exception) {
+        return "recording failed: ${e.message ?: e}"
+    } finally {
+        if (!done) sink.abort()
+    }
+}
+
+/**
  * Records a snippet to a video file. A recording is not a run: it types into its own offscreen
  * stage, so it never touches [com.github.asm0dey.typewriter.run.RunService] state.
  *
@@ -83,7 +104,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
             withBackgroundProgress(project, "Recording ${snippet.relativePath}", cancellable = true) {
                 reportRawProgress { reporter ->
                     val sink = FfmpegSink(status.path, options)
-                    try {
+                    val failure = runRecording(sink) {
                         withContext(Dispatchers.EDT) {
                             val disposable = Disposer.newDisposable("TypeWriter recording")
                             try {
@@ -97,16 +118,9 @@ class RecordingService(private val project: Project, private val scope: Coroutin
                                 Disposer.dispose(disposable)
                             }
                         }
-                    } catch (e: CancellationException) {
-                        sink.abort()
-                        throw e
-                    } catch (e: FfmpegFailed) {
-                        sink.abort()
-                        SnippetRunner.notify(project, html("recording failed:\n${e.stderrTail}"), NotificationType.ERROR)
-                        return@reportRawProgress
-                    } catch (e: Exception) {
-                        sink.abort()
-                        SnippetRunner.notify(project, html(e.message ?: e.toString()), NotificationType.ERROR)
+                    }
+                    if (failure != null) {
+                        SnippetRunner.notify(project, html(failure), NotificationType.ERROR)
                         return@reportRawProgress
                     }
                     SnippetRunner.notify(

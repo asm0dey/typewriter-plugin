@@ -10,6 +10,7 @@ import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.command.undo.UndoUtil
 import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.junit5.RunInEdt
@@ -71,6 +72,15 @@ class RecordingStageTest : TypeWriterFixtureTestCase() {
         fixture.configureByText("Foo.java", "class Foo {}")
         withStage { stage -> assertEquals(true, stage.editor.getUserData(RecordingStage.STAGE)) }
         assertEquals(null, fixture.editor.getUserData(RecordingStage.STAGE))
+    }
+
+    @Test
+    fun testStageDocumentHasNoUndo() {
+        fixture.configureByText("Foo.java", "class Foo {}")
+        withStage { stage ->
+            assertFalse(UndoUtil.isUndoDisabledFor(fixture.editor.document))
+            assertTrue(UndoUtil.isUndoDisabledFor(stage.editor.document))
+        }
     }
 
     @Test

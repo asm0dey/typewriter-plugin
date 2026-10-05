@@ -61,7 +61,8 @@ The target is always the selected text editor and its caret, as for a live run.
 - The dialog remembers the last values, including the output directory
   (application-level settings). Videos are build output, so the default never
   points into the project.
-- The save chooser's own overwrite confirmation is the only overwrite prompt.
+- The dialog confirms replacing an existing output file on OK (the save chooser may also ask
+  when browsing).
 
 ### Rendering
 
