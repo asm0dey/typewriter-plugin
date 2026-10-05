@@ -3,6 +3,7 @@ package com.github.asm0dey.typewriter.library
 import com.github.asm0dey.typewriter.format.SnippetFormatter
 import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.model.Step
+import com.github.asm0dey.typewriter.model.Timing
 import com.github.asm0dey.typewriter.parse.CommentSyntax
 import com.github.asm0dey.typewriter.parse.MarkerParser
 import com.github.asm0dey.typewriter.parse.MarkerScanner
@@ -115,12 +116,22 @@ object SnippetRunner {
 
     private const val GROUP = "TypeWriter"
 
+    /** A snippet resolved against [editor]: exactly what a live run hands to [RunService.launch]. */
+    data class Prepared(val editor: Editor, val steps: List<Step>, val timing: Timing)
+
     fun run(project: Project, editor: Editor?, snippet: Snippet) {
+        prepare(project, editor, snippet)?.let {
+            project.getService(RunService::class.java).launch(it.editor, it.steps, it.timing)
+        }
+    }
+
+    /** Everything [run] does before launching, notifications included; null wherever it bails out. */
+    fun prepare(project: Project, editor: Editor?, snippet: Snippet): Prepared? {
         val settings = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
         val text = SnippetLibrary.textOf(snippet)
         if (text == null) {
             notify(project, "${snippet.relativePath} has no readable text", NotificationType.ERROR)
-            return
+            return null
         }
 
         // A comment-less snippet's markers -- MarkerScanner.scan returns none for exactly this
@@ -169,7 +180,7 @@ object SnippetRunner {
             checks.filterIsInstance<Check.Error>().forEach {
                 notify(project, it.message, NotificationType.ERROR)
             }
-            return
+            return null
         }
         // PreFlight.check returns a blocking Check.Error when editor is null (its very first
         // check), and the blocked() branch above already returned in that case -- this documents
@@ -186,7 +197,7 @@ object SnippetRunner {
             if (step is Step.Type) Step.Type(BaseIndent.apply(step.text, indent, column)) else step
         }
         val timing = (sidecarDirectives ?: program.directives).timing(settings.defaultTiming())
-        project.getService(RunService::class.java).launch(target, steps, timing)
+        return Prepared(target, steps, timing)
     }
 
     fun notify(project: Project, message: String, type: NotificationType) {

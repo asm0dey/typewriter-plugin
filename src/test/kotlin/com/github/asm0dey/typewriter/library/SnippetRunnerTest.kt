@@ -3,6 +3,7 @@ package com.github.asm0dey.typewriter.library
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
+import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.run.RunService
 import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
 import com.github.asm0dey.typewriter.ui.TypeWriterSettings
@@ -22,6 +23,8 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 
 /**
@@ -235,5 +238,36 @@ class SnippetRunnerTest : TypeWriterFixtureTestCase() {
         } finally {
             settings.loadState(savedGlobal)
         }
+    }
+
+    @Test
+    fun testPrepareReturnsNullWithoutEditor() {
+        val s = snippet(tempDir("prep-null"), "01.java", "int x = 1;")
+
+        assertNull(onEdt { SnippetRunner.prepare(fixture.project, null, s) })
+    }
+
+    // prepare must yield exactly the steps run() used to hand to RunService, i.e. with the
+    // target's base indent applied to every line after the first.
+    @Test
+    fun testPrepareAppliesBaseIndent() {
+        // language="JAVA"
+        val target = """
+            |class A {
+            |    void f() {
+            |        <caret>
+            |    }
+            |}
+        """.trimMargin()
+        onEdt { fixture.configureByText("A.java", target) }
+        val s = snippet(tempDir("prep-indent"), "01.java", "int x = 1;\nint y = 2;")
+
+        val prepared = onEdt { SnippetRunner.prepare(fixture.project, fixture.editor, s) }!!
+
+        assertSame(fixture.editor, prepared.editor)
+        assertEquals(
+            "int x = 1;\n        int y = 2;",
+            prepared.steps.filterIsInstance<Step.Type>().joinToString("") { it.text },
+        )
     }
 }
