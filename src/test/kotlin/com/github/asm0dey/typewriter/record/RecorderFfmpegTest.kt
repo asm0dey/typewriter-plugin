@@ -8,7 +8,12 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.util.Disposer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.CancellationException
 import kotlinx.coroutines.withContext
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -133,5 +138,48 @@ class RecorderFfmpegTest : TypeWriterFixtureTestCase() {
         sink.abort()
         assertTrue(dir.listDirectoryEntries().isEmpty())
         assertFalse(out.exists())
+    }
+
+    private fun noise(): ByteArray = ByteArray(640 * 360 * 3).also { java.util.Random(1).nextBytes(it) }
+
+    @Test
+    fun testCancelDuringFinishKeepsTargetAndLeavesNoPart() {
+        val dir = Files.createTempDirectory("tw-rec")
+        val out = dir.resolve("demo.gif")
+        Files.writeString(out, "old")
+        val sink = FfmpegSink(requireFfmpeg(), options(out))
+        val frame = noise()
+        runBlocking {
+            repeat(150) { sink.frame(frame) }
+            val job = launch(Dispatchers.Default) { sink.finish() }
+            delay(20)
+            job.cancelAndJoin()
+        }
+        assertEquals("old", Files.readString(out))
+        assertEquals(listOf("demo.gif"), dir.listDirectoryEntries().map { it.fileName.toString() })
+    }
+
+    @Test
+    fun testAbortFromAnotherThreadDuringWritesIsCancellationNotFailure() {
+        val dir = Files.createTempDirectory("tw-rec")
+        val sink = FfmpegSink(requireFfmpeg(), options(dir.resolve("demo.gif")))
+        val frame = noise()
+        val failure = runBlocking {
+            val result = async(Dispatchers.Default) { runCatching { while (true) sink.frame(frame) }.exceptionOrNull() }
+            delay(200)
+            sink.abort()
+            result.await()
+        }
+        assertTrue(failure is CancellationException, "got $failure")
+        assertTrue(dir.listDirectoryEntries().isEmpty())
+    }
+
+    @Test
+    fun testFrameAfterAbortDoesNotStartFfmpeg() {
+        val dir = Files.createTempDirectory("tw-rec")
+        val sink = FfmpegSink(requireFfmpeg(), options(dir.resolve("demo.mp4")))
+        sink.abort()
+        assertThrows(CancellationException::class.java) { runBlocking { sink.frame(ByteArray(640 * 360 * 3)) } }
+        assertTrue(dir.listDirectoryEntries().isEmpty())
     }
 }
