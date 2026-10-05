@@ -21,4 +21,9 @@ class RecordOptionsTest {
     fun testVideoDirExists() {
         assertTrue(Files.isDirectory(defaultVideoDir()))
     }
+
+    @Test
+    fun testNotificationHtmlKeepsLinesAndEscapes() {
+        assertEquals("recording failed:<br>a &lt;b&gt;<br>c &amp; d", html("recording failed:\na <b>\nc & d"))
+    }
 }

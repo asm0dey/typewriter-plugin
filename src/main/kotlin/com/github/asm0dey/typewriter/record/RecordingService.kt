@@ -14,6 +14,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.text.StringUtil
 import com.intellij.platform.ide.progress.withBackgroundProgress
 import com.intellij.platform.util.progress.reportRawProgress
 import kotlinx.coroutines.CoroutineScope
@@ -21,6 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
+
+/** Notification content is HTML: escape [text] and keep its line breaks. */
+internal fun html(text: String): String = StringUtil.escapeXmlEntities(text).replace("\n", "<br>")
 
 /**
  * Records a snippet to a video file. A recording is not a run: it types into its own offscreen
@@ -39,7 +43,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
         val status = locateFfmpeg(settings.ffmpegPath)
         if (status !is FfmpegStatus.Found) {
             SnippetRunner.notify(
-                project, "cannot record: ffmpeg ${status.describe()}", NotificationType.ERROR,
+                project, html("cannot record: ffmpeg ${status.describe()}"), NotificationType.ERROR,
                 NotificationAction.createSimpleExpiring("Open Settings") {
                     ShowSettingsUtil.getInstance().showSettingsDialog(project, TypeWriterConfigurable::class.java)
                 },
@@ -47,7 +51,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
             return
         }
         recordingWarnings(snippet.relativePath, prepared.steps).forEach {
-            SnippetRunner.notify(project, it.message, NotificationType.WARNING)
+            SnippetRunner.notify(project, html(it.message), NotificationType.WARNING)
         }
 
         val initial = RecordOptions(
@@ -93,15 +97,15 @@ class RecordingService(private val project: Project, private val scope: Coroutin
                         throw e
                     } catch (e: FfmpegFailed) {
                         sink.abort()
-                        SnippetRunner.notify(project, "recording failed:\n${e.stderrTail}", NotificationType.ERROR)
+                        SnippetRunner.notify(project, html("recording failed:\n${e.stderrTail}"), NotificationType.ERROR)
                         return@reportRawProgress
                     } catch (e: Exception) {
                         sink.abort()
-                        SnippetRunner.notify(project, e.message ?: e.toString(), NotificationType.ERROR)
+                        SnippetRunner.notify(project, html(e.message ?: e.toString()), NotificationType.ERROR)
                         return@reportRawProgress
                     }
                     SnippetRunner.notify(
-                        project, "Recorded ${options.output.fileName}", NotificationType.INFORMATION,
+                        project, html("Recorded ${options.output.fileName}"), NotificationType.INFORMATION,
                         NotificationAction.createSimple("Show in Folder") { RevealFileAction.openFile(options.output) },
                     )
                 }
