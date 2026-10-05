@@ -69,8 +69,13 @@ class RecordingStage(project: Project, source: Editor, width: Int, height: Int, 
         editor.scrollingModel.scrollVertically(if (y < h / 3) 0 else y - h / 3)
     }
 
-    /** Paints the frame into [into], then the caret, which the editor only paints for the focus owner. */
+    /**
+     * Paints the frame into [into], then the caret, which the editor only paints for the focus owner.
+     * Re-lays out first: typing resizes the editor and gutter, and their revalidate() is a no-op here.
+     * The gutter's width update is queued on the EDT, so the caller must let the EDT run between frames.
+     */
     fun paint(into: BufferedImage) {
+        layOut(component)
         val g = into.createGraphics()
         try {
             component.paint(g)

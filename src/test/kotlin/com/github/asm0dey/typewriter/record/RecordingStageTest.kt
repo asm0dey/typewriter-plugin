@@ -5,10 +5,12 @@ import com.intellij.ide.DataManager
 import com.intellij.ide.ui.UISettingsUtils
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.util.Disposer
+import com.intellij.testFramework.PlatformTestUtil
 import com.intellij.testFramework.junit5.RunInEdt
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertSame
@@ -103,6 +105,38 @@ class RecordingStageTest : TypeWriterFixtureTestCase() {
             val caretColor = editor.colorsScheme.getColor(EditorColors.CARET_COLOR)!!
             val centre = Point(p.x + editor.settings.lineCursorWidth / 2, p.y + editor.lineHeight / 2)
             assertEquals(caretColor.rgb and 0xFFFFFF, img.getRGB(centre.x, centre.y) and 0xFFFFFF)
+        }
+    }
+
+    @Test
+    fun testGutterSurvivesGrowthPastOneHundredLines() {
+        fixture.configureByText("Foo.java", "class Foo {\n<caret>\n}")
+        withStage(1280, 720) { stage ->
+            val editor = stage.editor
+            val img = BufferedImage(1280, 720, BufferedImage.TYPE_3BYTE_BGR)
+            stage.paint(img)
+            val startWidth = editor.gutterComponentEx.width
+            repeat(150) { i ->
+                WriteCommandAction.runWriteCommandAction(fixture.project) {
+                    editor.document.insertString(editor.caretModel.offset, "int f$i;\n")
+                    editor.caretModel.moveToOffset(editor.caretModel.offset + "int f$i;\n".length)
+                }
+                editor.scrollingModel.scrollToCaret(ScrollType.MAKE_VISIBLE)
+                PlatformTestUtil.dispatchAllInvocationEventsInIdeEventQueue()
+                stage.paint(img)
+            }
+            val gutter = editor.gutterComponentEx
+            assertEquals(editor.contentComponent.height, gutter.height)
+            assertTrue(gutter.width > startWidth, "gutter width ${gutter.width} did not grow from $startWidth")
+            val caretRow = SwingUtilities.convertPoint(
+                editor.contentComponent, editor.visualPositionToXY(editor.caretModel.visualPosition), stage.component,
+            ).y + editor.lineHeight / 2
+            val gutterX = SwingUtilities.convertPoint(gutter, Point(0, 0), stage.component).x
+            val background = editor.colorsScheme.defaultBackground.rgb and 0xFFFFFF
+            assertTrue(
+                (gutterX until gutterX + gutter.width).any { (img.getRGB(it, caretRow) and 0xFFFFFF) != background },
+                "gutter row at y=$caretRow is blank",
+            )
         }
     }
 }
