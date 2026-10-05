@@ -14,6 +14,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.Key
 import com.intellij.testFramework.LightVirtualFile
 import com.intellij.ui.tabs.JBTabsFactory
 import com.intellij.ui.tabs.TabInfo
@@ -30,6 +31,11 @@ import javax.swing.SwingUtilities
  * JBTabs so the frame looks like the IDE, painted into images by the recorder. EDT only.
  */
 class RecordingStage(project: Project, source: Editor, width: Int, height: Int, fontSize: Int, parent: Disposable) {
+    companion object {
+        /** Set on a stage's editor, so a live run's [com.github.asm0dey.typewriter.run.AbortWatcher] can ignore it. */
+        val STAGE: Key<Boolean> = Key.create("typewriter.recordingStage")
+    }
+
     val editor: EditorEx
     val component: JComponent
 
@@ -46,6 +52,7 @@ class RecordingStage(project: Project, source: Editor, width: Int, height: Int, 
         val file = LightVirtualFile(name, fileType, initialText)
         val document = FileDocumentManager.getInstance().getDocument(file)!!
         editor = EditorFactory.getInstance().createEditor(document, project, file, false) as EditorEx
+        editor.putUserData(STAGE, true)
         Disposer.register(parent) { EditorFactory.getInstance().releaseEditor(editor) }
 
         editor.settings.isLineNumbersShown = true

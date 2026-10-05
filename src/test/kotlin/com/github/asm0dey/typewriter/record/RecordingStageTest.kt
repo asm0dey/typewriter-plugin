@@ -67,6 +67,13 @@ class RecordingStageTest : TypeWriterFixtureTestCase() {
     }
 
     @Test
+    fun testStageEditorIsTagged() {
+        fixture.configureByText("Foo.java", "class Foo {}")
+        withStage { stage -> assertEquals(true, stage.editor.getUserData(RecordingStage.STAGE)) }
+        assertEquals(null, fixture.editor.getUserData(RecordingStage.STAGE))
+    }
+
+    @Test
     fun testDefaultFontSizeIsTheGlobalSchemeNotTheScaledEditor() {
         fixture.configureByText("Foo.java", "class Foo {}")
         val global = EditorColorsManager.getInstance().globalScheme.editorFontSize

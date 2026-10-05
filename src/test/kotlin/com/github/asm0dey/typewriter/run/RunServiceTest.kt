@@ -3,6 +3,9 @@ package com.github.asm0dey.typewriter.run
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Step
 import com.github.asm0dey.typewriter.model.Timing
+import com.github.asm0dey.typewriter.record.RecordingStage
+import com.intellij.ide.DataManager
+import com.intellij.ide.impl.HeadlessDataManager
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -12,6 +15,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.command.WriteCommandAction
+import com.intellij.openapi.util.Disposer
 import com.intellij.testFramework.TestActionEvent
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -329,5 +333,46 @@ class RunServiceTest : TypeWriterFixtureTestCase() {
             "the event must land mid-run for the exemption to be exercised, but the document held " +
                 "$lengthAtDelivery of 10 characters when it was delivered",
         )
+    }
+
+    // Spec section 7: a recording may run while a live run plays. A recording's action steps go
+    // through the action system too, so the live run's watcher must ignore events aimed at a
+    // recording stage's editor -- typed characters and actions alike.
+    @Test
+    fun testEventsInARecordingStageDoNotAbortARunInProgress() {
+        configure("<caret>")
+        val svc = service()
+        val editor = fixture.editor
+        val document = editor.document
+        val parent = Disposer.newDisposable()
+        val action = object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) = Unit
+        }
+        var lengthAtDelivery = -1
+        try {
+            // The test DataManager answers every component with the fixture editor; use the
+            // component-based production one, as the IDE does (see RecorderTest). Reverts on dispose.
+            HeadlessDataManager.fallbackToProductionDataManager(parent)
+            (DataManager.getInstance() as HeadlessDataManager).setTestDataProvider(null, parent)
+            var context: DataContext? = null
+            onEdt {
+                val stage = RecordingStage(fixture.project, editor, 640, 360, 14, parent)
+                context = DataManager.getInstance().getDataContext(stage.editor.contentComponent)
+            }
+            runBlocking {
+                val job = launch { svc.run(editor, listOf(Step.Type("abcdefghij")), Timing(1, 0, 0)) }
+                while (document.text.isEmpty()) yield()
+                publishOnEdt {
+                    lengthAtDelivery = document.textLength
+                    it.beforeActionPerformed(action, TestActionEvent.createTestEvent(action, context!!))
+                    it.beforeEditorTyping('z', context!!)
+                }
+                job.join()
+            }
+        } finally {
+            onEdt { Disposer.dispose(parent) }
+        }
+        assertEquals("abcdefghij", document.text)
+        assertTrue(lengthAtDelivery in 1..9, "the events must land mid-run, but the document held $lengthAtDelivery")
     }
 }
