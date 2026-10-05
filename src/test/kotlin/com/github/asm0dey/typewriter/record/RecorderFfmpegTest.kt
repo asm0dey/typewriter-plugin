@@ -29,6 +29,7 @@ import java.time.Duration
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.listDirectoryEntries
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Real ffmpeg, real files. Driven like RecorderTest: [record] on Dispatchers.EDT from the test thread, no @RunInEdt. */
 class RecorderFfmpegTest : TypeWriterFixtureTestCase() {
@@ -152,7 +153,7 @@ class RecorderFfmpegTest : TypeWriterFixtureTestCase() {
         runBlocking {
             repeat(150) { sink.frame(frame) }
             val job = launch(Dispatchers.Default) { sink.finish() }
-            delay(20)
+            delay(20.milliseconds)
             job.cancelAndJoin()
         }
         assertEquals("old", Files.readString(out))
@@ -166,7 +167,7 @@ class RecorderFfmpegTest : TypeWriterFixtureTestCase() {
         val frame = noise()
         val failure = runBlocking {
             val result = async(Dispatchers.Default) { runCatching { while (true) sink.frame(frame) }.exceptionOrNull() }
-            delay(200)
+            delay(200.milliseconds)
             sink.abort()
             result.await()
         }
