@@ -2,6 +2,7 @@ package com.github.asm0dey.typewriter.record
 
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -31,6 +32,16 @@ class RecordOptionsTest {
         assertEquals("recording failed:<br>a &lt;b&gt;<br>c &amp; d", html("recording failed:\na <b>\nc & d"))
     }
 
+    @Test
+    fun testCaretBlinksFromItsLastMove() {
+        val ms = 1_000_000L
+        assertTrue(caretShown(0, 500))
+        assertTrue(caretShown(499 * ms, 500))
+        assertFalse(caretShown(500 * ms, 500))
+        assertTrue(caretShown(1000 * ms, 500))
+        assertTrue(caretShown(500 * ms, 0))
+    }
+
     private class AbortCounter : FrameSink {
         var aborts = 0
         override suspend fun frame(bytes: ByteArray) = Unit
@@ -43,23 +54,23 @@ class RecordOptionsTest {
     @Test
     fun testRecordingOutcomes() = runBlocking {
         val ok = AbortCounter()
-        assertNull(runRecording(ok) {})
+        assertNull(runRecording({ ok }) {})
         assertEquals(0, ok.aborts)
 
         val ffmpeg = AbortCounter()
-        assertEquals("recording failed:\ntail", runRecording(ffmpeg) { throw FfmpegFailed("tail") })
+        assertEquals("recording failed:\ntail", runRecording({ ffmpeg }) { throw FfmpegFailed("tail") })
         assertEquals(1, ffmpeg.aborts)
 
         val other = AbortCounter()
-        assertEquals("recording failed: boom", runRecording(other) { throw IllegalStateException("boom") })
+        assertEquals("recording failed: boom", runRecording({ other }) { throw IllegalStateException("boom") })
         assertEquals(1, other.aborts)
 
         val cancelled = AbortCounter()
-        assertThrows(CancellationException::class.java) { runBlocking { runRecording(cancelled) { throw CancellationException() } } }
+        assertThrows(CancellationException::class.java) { runBlocking { runRecording({ cancelled }) { throw CancellationException() } } }
         assertEquals(1, cancelled.aborts)
 
         val error = AbortCounter()
-        assertThrows(StackOverflowError::class.java) { runBlocking { runRecording(error) { throw StackOverflowError() } } }
+        assertThrows(StackOverflowError::class.java) { runBlocking { runRecording({ error }) { throw StackOverflowError() } } }
         assertEquals(1, error.aborts)
     }
 }

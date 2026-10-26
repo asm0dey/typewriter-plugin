@@ -23,6 +23,7 @@ import com.intellij.ui.tabs.TabInfo
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Container
+import java.awt.Dimension
 import java.awt.image.BufferedImage
 import javax.swing.JComponent
 import javax.swing.JPanel
@@ -69,6 +70,7 @@ class RecordingStage internal constructor(
 
     val editor: EditorEx
     val component: JComponent
+    private val tabs: JComponent
 
     init {
         val file = start.file
@@ -91,15 +93,16 @@ class RecordingStage internal constructor(
         editor.setFontSize(fontSize * UISettingsUtils.getInstance().currentIdeScale)
         editor.caretModel.moveToOffset(caret)
 
-        val tabs = JBTabsFactory.createEditorTabs(project, parent)
-        tabs.addTab(TabInfo(editor.component).setText(name).setIcon(fileType.icon))
+        val jbTabs = JBTabsFactory.createEditorTabs(project, parent)
+        jbTabs.addTab(TabInfo(editor.component).setText(name).setIcon(fileType.icon))
+        tabs = jbTabs.component
         // A detached component has no PROJECT in its DataContext, and ReformatCode needs it.
         component = object : JPanel(BorderLayout()), UiDataProvider {
             override fun uiDataSnapshot(sink: DataSink) {
                 sink[CommonDataKeys.PROJECT] = project
             }
         }
-        component.add(tabs.component, BorderLayout.CENTER)
+        component.add(tabs, BorderLayout.CENTER)
         component.setSize(width, height)
         // Neither revalidate() nor validate() does anything without a peer (no window), so lay the
         // tree out by hand, parents first so each child already has its final size.
@@ -111,15 +114,16 @@ class RecordingStage internal constructor(
     }
 
     /**
-     * Paints the frame into [into], then the caret, which the editor only paints for the focus owner.
+     * Paints the frame into [into], then the caret when [caret] (the editor only paints it for the focus owner).
      * Re-lays out first: typing resizes the editor and gutter, and their revalidate() is a no-op here.
      * The gutter's width update is queued on the EDT, so the caller must let the EDT run between frames.
      */
-    fun paint(into: BufferedImage) {
+    fun paint(into: BufferedImage, caret: Boolean = true) {
         layOut(component)
         val g = into.createGraphics()
         try {
             component.paint(g)
+            if (!caret) return
             val p = SwingUtilities.convertPoint(
                 editor.contentComponent, editor.visualPositionToXY(editor.caretModel.visualPosition), component,
             )
@@ -129,6 +133,26 @@ class RecordingStage internal constructor(
         } finally {
             g.dispose()
         }
+    }
+
+    /**
+     * The frame that shows the whole document unscrolled: this stage's chrome (tab strip, gutter,
+     * scroll bars) around every line in full, plus the margins the editor keeps around the caret
+     * when it scrolls to it, so a caret at the end never scrolls the frame. Never narrower than the
+     * tab strip wants.
+     */
+    fun fullSize(): Dimension {
+        layOut(component)
+        val area = editor.scrollingModel.visibleArea
+        val document = editor.document
+        val textWidth = (0 until document.lineCount).maxOfOrNull { editor.offsetToXY(document.getLineEndOffset(it)).x } ?: 0
+        val textHeight = editor.offsetToXY(document.textLength).y + editor.lineHeight
+        val columns = editor.settings.horizontalScrollOffset + 1
+        val lines = editor.settings.verticalScrollOffset
+        return Dimension(
+            maxOf(component.width - area.width + textWidth + columns * EditorUtil.getPlainSpaceWidth(editor), tabs.preferredSize.width),
+            component.height - area.height + textHeight + lines * editor.lineHeight + editor.lineHeight / 2,
+        )
     }
 
     private fun layOut(c: Component) {

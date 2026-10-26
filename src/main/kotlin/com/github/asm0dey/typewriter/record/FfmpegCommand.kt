@@ -36,6 +36,10 @@ fun ffmpegArgs(ffmpeg: Path, width: Int, height: Int, fps: Int, format: VideoFor
     }
 }
 
+/** The largest frame: the dialog's limit, and where Fit to code stops growing. */
+const val MAX_WIDTH = 7680
+const val MAX_HEIGHT = 4320
+
 fun sizeError(width: Int, height: Int): String? = when {
     width < 2 || height < 2 -> "width and height must be positive"
     width % 2 != 0 || height % 2 != 0 -> "width and height must be even"

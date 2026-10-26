@@ -28,16 +28,23 @@ fun defaultOutput(recordDir: String, snippetName: String): Path =
     (if (recordDir.isBlank()) defaultVideoDir() else Path.of(recordDir)).resolve("$snippetName.mp4")
 
 private const val CUSTOM = "Custom"
-private val PRESETS = mapOf("1920×1080" to (1920 to 1080), "1280×720" to (1280 to 720))
+private const val FIT = "Fit to code"
+private val PRESETS = mapOf("3840×2160" to (3840 to 2160), "1920×1080" to (1920 to 1080), "1280×720" to (1280 to 720))
+
+/** Fit to code's max ratios, width / height; 0 = no limit. */
+internal val RATIOS = mapOf("16:9" to 16.0 / 9, "4:3" to 4.0 / 3, "1:1" to 1.0, "9:16" to 9.0 / 16, "No limit" to 0.0)
+
+internal fun ratioLabel(ratio: Double): String = RATIOS.entries.firstOrNull { it.value == ratio }?.key ?: "16:9"
 
 /** Size, font, FPS and holds: the settings a single recording and a batch share. */
 class RecordSettingsFields(initial: RecordOptions) {
-    private val width = JSpinner(SpinnerNumberModel(initial.width, 2, 7680, 2))
-    private val height = JSpinner(SpinnerNumberModel(initial.height, 2, 4320, 2))
-    private val size = ComboBox((PRESETS.keys + CUSTOM).toTypedArray()).apply {
-        selectedItem = PRESETS.entries.firstOrNull { it.value == initial.width to initial.height }?.key ?: CUSTOM
+    private val width = JSpinner(SpinnerNumberModel(initial.width, 2, MAX_WIDTH, 2))
+    private val height = JSpinner(SpinnerNumberModel(initial.height, 2, MAX_HEIGHT, 2))
+    private val size = ComboBox((PRESETS.keys + FIT + CUSTOM).toTypedArray()).apply {
+        selectedItem = if (initial.fit) FIT else PRESETS.entries.firstOrNull { it.value == initial.width to initial.height }?.key ?: CUSTOM
         addActionListener { syncSize() }
     }
+    private val ratio = ComboBox(RATIOS.keys.toTypedArray()).apply { selectedItem = ratioLabel(initial.maxRatio) }
     private val fontSize = JSpinner(SpinnerNumberModel(initial.fontSize, 1, 200, 1))
     private val fps = JSpinner(SpinnerNumberModel(initial.fps, 1, 120, 1))
     private val holdBefore = JSpinner(SpinnerNumberModel(initial.holdBeforeMs, 0, 60_000, 100))
@@ -47,27 +54,31 @@ class RecordSettingsFields(initial: RecordOptions) {
         syncSize()
     }
 
-    /** A preset shows its size in the spinners and locks them; Custom unlocks them. */
+    /** A preset shows its size in the spinners and locks them; Fit to code locks them too and unlocks its ratio; Custom unlocks them. */
     private fun syncSize() {
         val preset = PRESETS[size.selectedItem]
         if (preset != null) {
             width.value = preset.first
             height.value = preset.second
         }
-        width.isEnabled = preset == null
-        height.isEnabled = preset == null
+        width.isEnabled = size.selectedItem == CUSTOM
+        height.isEnabled = size.selectedItem == CUSTOM
+        ratio.isEnabled = size.selectedItem == FIT
     }
 
     fun addTo(form: FormBuilder): FormBuilder = form
         .addLabeledComponent("Size:", size)
         .addLabeledComponent("Width:", width)
         .addLabeledComponent("Height:", height)
+        .addLabeledComponent("Max ratio:", ratio)
         .addLabeledComponent("Font size:", fontSize)
         .addLabeledComponent("FPS:", fps)
         .addLabeledComponent("Hold before (ms):", holdBefore)
         .addLabeledComponent("Hold after (ms):", holdAfter)
 
-    fun validate(): ValidationInfo? = sizeError(width.value as Int, height.value as Int)?.let { ValidationInfo(it, width) }
+    private fun fit() = size.selectedItem == FIT
+
+    fun validate(): ValidationInfo? = if (fit()) null else sizeError(width.value as Int, height.value as Int)?.let { ValidationInfo(it, width) }
 
     fun options(output: Path): RecordOptions = RecordOptions(
         output = output,
@@ -77,6 +88,8 @@ class RecordSettingsFields(initial: RecordOptions) {
         fps = fps.value as Int,
         holdBeforeMs = holdBefore.value as Int,
         holdAfterMs = holdAfter.value as Int,
+        fit = fit(),
+        maxRatio = RATIOS.getValue(ratio.selectedItem as String),
     )
 }
 

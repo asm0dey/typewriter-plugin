@@ -144,6 +144,99 @@ class RecorderTest : TypeWriterFixtureTestCase() {
     }
 
     @Test
+    fun testCaretBlinksThroughTheHold() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val sink = ListSink()
+        // 10 fps: frames every 100 ms from the last keystroke, so a 500 ms blink flips every 5 frames.
+        recordStage(
+            listOf(Step.Type("x")), options = options(fps = 10, after = 2000), sink = sink,
+            prepare = { it.editor.settings.isBlinkCaret = true; it.editor.settings.caretBlinkPeriod = 500 },
+        )
+        val f = sink.frames
+        assertTrue(f.size >= 20, "${f.size} frames")
+        assertTrue(f[0].contentEquals(f[4]))
+        assertFalse(f[4].contentEquals(f[5]))
+        assertTrue(f[5].contentEquals(f[9]))
+        assertTrue(f[10].contentEquals(f[0]))
+        assertTrue(f[15].contentEquals(f[5]))
+    }
+
+    @Test
+    fun testCaretStaysOnWhenBlinkingIsOff() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val sink = ListSink()
+        recordStage(
+            listOf(Step.Type("x")), options = options(fps = 10, after = 2000), sink = sink,
+            prepare = { it.editor.settings.isBlinkCaret = false },
+        )
+        assertTrue(sink.frames.all { it.contentEquals(sink.frames[0]) })
+    }
+
+    @Test
+    fun testFitToCodeShowsEveryLineUnscrolled() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val steps = listOf(Step.Type((1..30).joinToString("\n") { "int field$it = ${"9".repeat(it * 3)};" }))
+        val fit = runBlocking {
+            withContext(Dispatchers.EDT) {
+                fitted(fixture.project, options().copy(fit = true, maxRatio = 0.0), steps, Timing(0, 0, 0)) { w, h, parent ->
+                    RecordingStage(fixture.project, fixture.editor, w, h, 14, parent)
+                }
+            }
+        }
+        assertTrue(fit.width % 2 == 0 && fit.height % 2 == 0, "$fit")
+        assertTrue(fit.width < MAX_WIDTH && fit.height < MAX_HEIGHT, "$fit")
+        recordStage(steps, options = fit) { stage ->
+            val editor = stage.editor
+            val document = editor.document
+            val area = editor.scrollingModel.visibleArea
+            assertEquals(0, area.x)
+            assertEquals(0, area.y)
+            val textWidth = (0 until document.lineCount).maxOf { editor.offsetToXY(document.getLineEndOffset(it)).x }
+            val textHeight = editor.offsetToXY(document.textLength).y + editor.lineHeight
+            assertTrue(textWidth <= area.width, "text $textWidth wider than $area")
+            assertTrue(textHeight <= area.height, "text $textHeight taller than $area")
+            assertTrue(area.height - textHeight < (editor.settings.verticalScrollOffset + 2) * editor.lineHeight, "frame $area much taller than text $textHeight")
+        }
+    }
+
+    @Test
+    fun testFitToCodeCapsTheHeightAtTheRatioAndScrolls() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val steps = listOf(Step.Type((1..60).joinToString("\n") { "int field$it = ${"9".repeat(40)};" }))
+        val fit = runBlocking {
+            withContext(Dispatchers.EDT) {
+                fitted(fixture.project, options().copy(fit = true), steps, Timing(0, 0, 0)) { w, h, parent ->
+                    RecordingStage(fixture.project, fixture.editor, w, h, 14, parent)
+                }
+            }
+        }
+        assertTrue(fit.width % 2 == 0 && fit.height % 2 == 0, "$fit")
+        assertTrue(fit.height <= fit.width * 9 / 16 && fit.height >= fit.width * 9 / 16 - 2, "$fit is not 16:9")
+        recordStage(steps, options = fit) { stage ->
+            val editor = stage.editor
+            val area = editor.scrollingModel.visibleArea
+            assertEquals(0, area.x)
+            assertTrue(area.y > 0, "60 lines in a 16:9 frame should have scrolled: $area")
+            val caretY = editor.visualPositionToXY(editor.caretModel.visualPosition).y
+            assertTrue(caretY >= area.y && caretY + editor.lineHeight <= area.y + area.height, "caretY=$caretY area=$area")
+        }
+    }
+
+    @Test
+    fun testFitToCodeKeepsAShortSnippetTight() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val steps = listOf(Step.Type("int aLongVariableNameForAWideLine = 1234567890;\nint y = 2;"))
+        val fit = runBlocking {
+            withContext(Dispatchers.EDT) {
+                fitted(fixture.project, options().copy(fit = true), steps, Timing(0, 0, 0)) { w, h, parent ->
+                    RecordingStage(fixture.project, fixture.editor, w, h, 14, parent)
+                }
+            }
+        }
+        assertTrue(fit.height < fit.width * 9 / 16, "a two-line snippet was padded to 16:9: $fit")
+    }
+
+    @Test
     fun testFirstAndLastFramesDiffer() {
         edt { fixture.configureByText("A.java", "<caret>") }
         val sink = ListSink()
