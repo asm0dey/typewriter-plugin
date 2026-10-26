@@ -30,6 +30,56 @@ fun defaultOutput(recordDir: String, snippetName: String): Path =
 private const val CUSTOM = "Custom"
 private val PRESETS = mapOf("1920×1080" to (1920 to 1080), "1280×720" to (1280 to 720))
 
+/** Size, font, FPS and holds: the settings a single recording and a batch share. */
+class RecordSettingsFields(initial: RecordOptions) {
+    private val width = JSpinner(SpinnerNumberModel(initial.width, 2, 7680, 2))
+    private val height = JSpinner(SpinnerNumberModel(initial.height, 2, 4320, 2))
+    private val size = ComboBox((PRESETS.keys + CUSTOM).toTypedArray()).apply {
+        selectedItem = PRESETS.entries.firstOrNull { it.value == initial.width to initial.height }?.key ?: CUSTOM
+        addActionListener { syncSize() }
+    }
+    private val fontSize = JSpinner(SpinnerNumberModel(initial.fontSize, 1, 200, 1))
+    private val fps = JSpinner(SpinnerNumberModel(initial.fps, 1, 120, 1))
+    private val holdBefore = JSpinner(SpinnerNumberModel(initial.holdBeforeMs, 0, 60_000, 100))
+    private val holdAfter = JSpinner(SpinnerNumberModel(initial.holdAfterMs, 0, 60_000, 100))
+
+    init {
+        syncSize()
+    }
+
+    /** A preset shows its size in the spinners and locks them; Custom unlocks them. */
+    private fun syncSize() {
+        val preset = PRESETS[size.selectedItem]
+        if (preset != null) {
+            width.value = preset.first
+            height.value = preset.second
+        }
+        width.isEnabled = preset == null
+        height.isEnabled = preset == null
+    }
+
+    fun addTo(form: FormBuilder): FormBuilder = form
+        .addLabeledComponent("Size:", size)
+        .addLabeledComponent("Width:", width)
+        .addLabeledComponent("Height:", height)
+        .addLabeledComponent("Font size:", fontSize)
+        .addLabeledComponent("FPS:", fps)
+        .addLabeledComponent("Hold before (ms):", holdBefore)
+        .addLabeledComponent("Hold after (ms):", holdAfter)
+
+    fun validate(): ValidationInfo? = sizeError(width.value as Int, height.value as Int)?.let { ValidationInfo(it, width) }
+
+    fun options(output: Path): RecordOptions = RecordOptions(
+        output = output,
+        width = width.value as Int,
+        height = height.value as Int,
+        fontSize = fontSize.value as Int,
+        fps = fps.value as Int,
+        holdBeforeMs = holdBefore.value as Int,
+        holdAfterMs = holdAfter.value as Int,
+    )
+}
+
 class RecordDialog(private val project: Project, initial: RecordOptions) : DialogWrapper(project) {
     private val output = TextFieldWithBrowseButton().apply {
         text = initial.output.toString()
@@ -44,49 +94,20 @@ class RecordDialog(private val project: Project, initial: RecordOptions) : Dialo
                 ?.let { text = it.file.path }
         }
     }
-    private val width = JSpinner(SpinnerNumberModel(initial.width, 2, 7680, 2))
-    private val height = JSpinner(SpinnerNumberModel(initial.height, 2, 4320, 2))
-    private val size = ComboBox((PRESETS.keys + CUSTOM).toTypedArray()).apply {
-        selectedItem = PRESETS.entries.firstOrNull { it.value == initial.width to initial.height }?.key ?: CUSTOM
-        addActionListener { syncSize() }
-    }
-    private val fontSize = JSpinner(SpinnerNumberModel(initial.fontSize, 1, 200, 1))
-    private val fps = JSpinner(SpinnerNumberModel(initial.fps, 1, 120, 1))
-    private val holdBefore = JSpinner(SpinnerNumberModel(initial.holdBeforeMs, 0, 60_000, 100))
-    private val holdAfter = JSpinner(SpinnerNumberModel(initial.holdAfterMs, 0, 60_000, 100))
+    private val fields = RecordSettingsFields(initial)
 
     init {
         title = "Record Snippet to Video"
-        syncSize()
         init()
-    }
-
-    /** A preset shows its size in the spinners and locks them; Custom unlocks them. */
-    private fun syncSize() {
-        val preset = PRESETS[size.selectedItem]
-        if (preset != null) {
-            width.value = preset.first
-            height.value = preset.second
-        }
-        width.isEnabled = preset == null
-        height.isEnabled = preset == null
     }
 
     private fun outputPath(): Path? = runCatching { Path.of(output.text.trim()) }.getOrNull()?.takeIf { it.isAbsolute }
 
-    override fun createCenterPanel(): JComponent = FormBuilder.createFormBuilder()
-        .addLabeledComponent("Output:", output)
-        .addLabeledComponent("Size:", size)
-        .addLabeledComponent("Width:", width)
-        .addLabeledComponent("Height:", height)
-        .addLabeledComponent("Font size:", fontSize)
-        .addLabeledComponent("FPS:", fps)
-        .addLabeledComponent("Hold before (ms):", holdBefore)
-        .addLabeledComponent("Hold after (ms):", holdAfter)
-        .panel
+    override fun createCenterPanel(): JComponent =
+        fields.addTo(FormBuilder.createFormBuilder().addLabeledComponent("Output:", output)).panel
 
     override fun doValidate(): ValidationInfo? {
-        sizeError(width.value as Int, height.value as Int)?.let { return ValidationInfo(it, width) }
+        fields.validate()?.let { return it }
         val out = outputPath() ?: return ValidationInfo("output must be an absolute path", output)
         if (VideoFormat.of(out) == null) return ValidationInfo("output must end in .mp4 or .gif", output)
         return null
@@ -100,13 +121,5 @@ class RecordDialog(private val project: Project, initial: RecordOptions) : Dialo
         super.doOKAction()
     }
 
-    fun options(): RecordOptions = RecordOptions(
-        output = outputPath()!!,
-        width = width.value as Int,
-        height = height.value as Int,
-        fontSize = fontSize.value as Int,
-        fps = fps.value as Int,
-        holdBeforeMs = holdBefore.value as Int,
-        holdAfterMs = holdAfter.value as Int,
-    )
+    fun options(): RecordOptions = fields.options(outputPath()!!)
 }

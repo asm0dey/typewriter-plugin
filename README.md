@@ -164,6 +164,27 @@ Your values are remembered.
 Rendering is offscreen, in the background, with a progress bar and a Cancel button. The real
 file is never touched, and your IDE keystrokes don't stop it.
 
+### Recording several snippets
+
+`Tools > TypeWriter > Record Snippets to Videos...` records a batch, one video per snippet,
+without an open editor:
+
+- **Pattern**: a glob over the snippet's path, case-insensitive. `*` matches anything
+  (including `/`), `?` one character. Typing a pattern ticks exactly the matching snippets;
+  tick or untick rows by hand afterwards.
+- **Output folder** and **Format** (MP4 or GIF), plus the same size, font, FPS and hold
+  settings as a single recording.
+
+Each video types into an empty file named like a class: `03-user-service.kt` is typed into
+`UserService.kt`. Videos keep the snippet's name and subdirectory: `java/03-user-service.kt`
+becomes `<folder>/java/03-user-service.mp4`. When two snippets would get the same video name
+(`01-hello.java` and `01-hello.kt`), both keep their extension: `01-hello.java.mp4`.
+
+If any of the videos already exist, you are asked once whether to overwrite them or pick
+another folder. Snippets record one after another; one that fails is skipped, and a single
+notification at the end says how many were recorded, with **Show Details** for failures and
+warnings. Cancel keeps the videos already finished.
+
 ### ffmpeg
 
 Recording needs [ffmpeg](https://ffmpeg.org/):

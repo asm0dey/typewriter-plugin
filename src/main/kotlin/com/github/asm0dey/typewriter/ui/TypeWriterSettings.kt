@@ -28,6 +28,11 @@ class TypeWriterSettings : PersistentStateComponent<TypeWriterSettings.State> {
         var recordFps: Int = 60,
         var recordHoldBeforeMs: Int = 1000,
         var recordHoldAfterMs: Int = 2000,
+        var recordBatchPattern: String = "",
+        /** Blank = the OS video directory. */
+        var recordBatchDir: String = "",
+        /** `mp4` or `gif`. */
+        var recordBatchFormat: String = "mp4",
     )
 
     private var state = State()
