@@ -1,5 +1,11 @@
 # TypeWriter Changelog
 
+## [Unreleased]
+
+### Added
+
+- Record several snippets at once from `Tools > TypeWriter > Record Snippets to Videos...`: pick them by a case-insensitive pattern and checkboxes, get one video per snippet in a folder, each typed into an empty file named like a class (`03-user-service.kt` → `UserService.kt`).
+
 ## [1.1.0]
 
 ### Added
