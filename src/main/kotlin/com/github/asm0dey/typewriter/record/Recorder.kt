@@ -27,10 +27,14 @@ interface FrameSink {
     fun abort()
 }
 
-/** [fit]: ignore [width] x [height] and size the video to its code ([fitted]). */
+/**
+ * [fit]: ignore [width] x [height] and size the video to its code ([fitted]), no taller than
+ * [maxRatio] (width / height) allows; 0 = no limit.
+ */
 data class RecordOptions(
     val output: Path, val width: Int, val height: Int, val fontSize: Int,
     val fps: Int, val holdBeforeMs: Int, val holdAfterMs: Int, val fit: Boolean = false,
+    val maxRatio: Double = 16.0 / 9,
 )
 
 /** Whether a caret blinking every [periodMs] shows [sinceMove] ns after it last moved: on first, as in the IDE. 0 = no blinking. */
@@ -40,7 +44,8 @@ internal fun caretShown(sinceMove: Long, periodMs: Int): Boolean =
 /**
  * [options], or for [RecordOptions.fit] [options] sized to show every line [steps] ever produce in
  * full: plays them unpainted on a throwaway stage from [newStage] and keeps the largest
- * [RecordingStage.fullSize], rounded up to even and capped at [MAX_WIDTH] x [MAX_HEIGHT]. EDT only.
+ * [RecordingStage.fullSize], rounded up to even and capped at [MAX_WIDTH] x [MAX_HEIGHT]. A
+ * [RecordOptions.maxRatio] caps the height at that ratio of the width; the code then scrolls. EDT only.
  */
 suspend fun fitted(
     project: Project, options: RecordOptions, steps: List<Step>, timing: Timing,
@@ -59,7 +64,9 @@ suspend fun fitted(
         }
         Player(project, stage.editor, Any(), measure).play(steps, timing)
         fun even(n: Int, max: Int) = minOf((n + 1) / 2 * 2, max)
-        return options.copy(width = even(size.width, MAX_WIDTH), height = even(size.height, MAX_HEIGHT))
+        val width = even(size.width, MAX_WIDTH)
+        val height = if (options.maxRatio > 0) minOf(size.height, (width / options.maxRatio).toInt()) else size.height
+        return options.copy(width = width, height = even(height, MAX_HEIGHT))
     } finally {
         Disposer.dispose(disposable)
     }

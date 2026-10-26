@@ -218,6 +218,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
         holdBeforeMs = settings.recordHoldBeforeMs,
         holdAfterMs = settings.recordHoldAfterMs,
         fit = settings.recordFit,
+        maxRatio = RATIOS[settings.recordFitRatio] ?: RATIOS.getValue("16:9"),
     )
 
     private fun save(settings: TypeWriterSettings.State, options: RecordOptions) {
@@ -228,5 +229,6 @@ class RecordingService(private val project: Project, private val scope: Coroutin
         settings.recordHoldBeforeMs = options.holdBeforeMs
         settings.recordHoldAfterMs = options.holdAfterMs
         settings.recordFit = options.fit
+        settings.recordFitRatio = ratioLabel(options.maxRatio)
     }
 }

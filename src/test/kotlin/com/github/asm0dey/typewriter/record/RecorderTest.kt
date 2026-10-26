@@ -178,7 +178,7 @@ class RecorderTest : TypeWriterFixtureTestCase() {
         val steps = listOf(Step.Type((1..30).joinToString("\n") { "int field$it = ${"9".repeat(it * 3)};" }))
         val fit = runBlocking {
             withContext(Dispatchers.EDT) {
-                fitted(fixture.project, options().copy(fit = true), steps, Timing(0, 0, 0)) { w, h, parent ->
+                fitted(fixture.project, options().copy(fit = true, maxRatio = 0.0), steps, Timing(0, 0, 0)) { w, h, parent ->
                     RecordingStage(fixture.project, fixture.editor, w, h, 14, parent)
                 }
             }
@@ -197,6 +197,43 @@ class RecorderTest : TypeWriterFixtureTestCase() {
             assertTrue(textHeight <= area.height, "text $textHeight taller than $area")
             assertTrue(area.height - textHeight < (editor.settings.verticalScrollOffset + 2) * editor.lineHeight, "frame $area much taller than text $textHeight")
         }
+    }
+
+    @Test
+    fun testFitToCodeCapsTheHeightAtTheRatioAndScrolls() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val steps = listOf(Step.Type((1..60).joinToString("\n") { "int field$it = ${"9".repeat(40)};" }))
+        val fit = runBlocking {
+            withContext(Dispatchers.EDT) {
+                fitted(fixture.project, options().copy(fit = true), steps, Timing(0, 0, 0)) { w, h, parent ->
+                    RecordingStage(fixture.project, fixture.editor, w, h, 14, parent)
+                }
+            }
+        }
+        assertTrue(fit.width % 2 == 0 && fit.height % 2 == 0, "$fit")
+        assertTrue(fit.height <= fit.width * 9 / 16 && fit.height >= fit.width * 9 / 16 - 2, "$fit is not 16:9")
+        recordStage(steps, options = fit) { stage ->
+            val editor = stage.editor
+            val area = editor.scrollingModel.visibleArea
+            assertEquals(0, area.x)
+            assertTrue(area.y > 0, "60 lines in a 16:9 frame should have scrolled: $area")
+            val caretY = editor.visualPositionToXY(editor.caretModel.visualPosition).y
+            assertTrue(caretY >= area.y && caretY + editor.lineHeight <= area.y + area.height, "caretY=$caretY area=$area")
+        }
+    }
+
+    @Test
+    fun testFitToCodeKeepsAShortSnippetTight() {
+        edt { fixture.configureByText("A.java", "<caret>") }
+        val steps = listOf(Step.Type("int aLongVariableNameForAWideLine = 1234567890;\nint y = 2;"))
+        val fit = runBlocking {
+            withContext(Dispatchers.EDT) {
+                fitted(fixture.project, options().copy(fit = true), steps, Timing(0, 0, 0)) { w, h, parent ->
+                    RecordingStage(fixture.project, fixture.editor, w, h, 14, parent)
+                }
+            }
+        }
+        assertTrue(fit.height < fit.width * 9 / 16, "a two-line snippet was padded to 16:9: $fit")
     }
 
     @Test

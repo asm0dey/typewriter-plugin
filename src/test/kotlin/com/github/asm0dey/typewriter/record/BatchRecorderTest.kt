@@ -119,7 +119,7 @@ class BatchRecorderTest : TypeWriterFixtureTestCase() {
             BatchItem(snippet("02-b.java", "class B {\n" + "    int aVeryLongFieldNameIndeed;\n".repeat(20) + "}"), out.resolve("02-b.mp4")),
         )
         val sized = mutableListOf<RecordOptions>()
-        val outcomes = run(items, options().copy(fit = true)) { sized += it; ListSink() }
+        val outcomes = run(items, options().copy(fit = true, maxRatio = 0.0)) { sized += it; ListSink() }
         outcomes.forEach { assertInstanceOf(BatchOutcome.Recorded::class.java, it) }
         val (a, b) = sized
         assertTrue(b.width > a.width && b.height > a.height, "$a vs $b")
