@@ -1,6 +1,6 @@
 # TypeWriter Changelog
 
-## [Unreleased]
+## [1.3.0]
 
 ### Added
 
@@ -61,8 +61,8 @@ Complete rewrite.
   longer writes to your keymap, and an action id no longer changes when you
   change a shortcut.
 
-[Unreleased]: https://github.com/asm0dey/typewriter-plugin/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/asm0dey/typewriter-plugin/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/asm0dey/typewriter-plugin/compare/v1.0.1...v1.1.0
-[1.0.1]: https://github.com/asm0dey/typewriter-plugin/compare/v1.0.0...v1.0.1
-[1.0.0]: https://github.com/asm0dey/typewriter-plugin/commits/v1.0.0
+[1.3.0]: https://github.com/asm0dey/typewriter-plugin/compare/1.2.0...1.3.0
+[1.2.0]: https://github.com/asm0dey/typewriter-plugin/compare/1.1.0...1.2.0
+[1.1.0]: https://github.com/asm0dey/typewriter-plugin/compare/1.0.1...1.1.0
+[1.0.1]: https://github.com/asm0dey/typewriter-plugin/compare/1.0.0...1.0.1
+[1.0.0]: https://github.com/asm0dey/typewriter-plugin/commits/1.0.0
