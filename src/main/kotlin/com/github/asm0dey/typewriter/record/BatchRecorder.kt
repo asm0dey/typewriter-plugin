@@ -67,7 +67,7 @@ suspend fun recordBatch(
             "recording failed: ${e.message ?: e}"
         }
         progress((index + 1.0) / items.size)
-        onOutcome(failure?.let { BatchOutcome.Failed(item, it, warnings) } ?: BatchOutcome.Recorded(item, warnings))
+        onOutcome(if (failure == null) BatchOutcome.Recorded(item, warnings) else BatchOutcome.Failed(item, failure, warnings))
     }
 }
 
