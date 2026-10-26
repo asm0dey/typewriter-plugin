@@ -4,6 +4,7 @@ import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
 import com.github.asm0dey.typewriter.model.Directives
 import com.github.asm0dey.typewriter.model.Snippet
 import com.github.asm0dey.typewriter.model.Step
+import com.github.asm0dey.typewriter.record.emptyStage
 import com.github.asm0dey.typewriter.run.RunService
 import com.github.asm0dey.typewriter.ui.TypeWriterProjectSettings
 import com.github.asm0dey.typewriter.ui.TypeWriterSettings
@@ -14,7 +15,9 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.fileTypes.FileType
 import com.intellij.openapi.fileTypes.PlainTextFileType
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.testFramework.TestActionEvent
 import java.nio.file.Files
@@ -25,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -97,6 +101,24 @@ class SnippetRunnerTest : TypeWriterFixtureTestCase() {
     // first check). If the blocked() guard were ever removed or ignored, this run would attempt
     // to type into a read-only document and either throw or silently mutate it -- either way this
     // assertion would fail.
+    @Test
+    fun `prepare reports through the given reporter and accepts an empty stage`() {
+        val snippet = snippet(tempDir("prep"), "01-a.java", "class A {}")
+        val messages = mutableListOf<Pair<String, NotificationType>>()
+        val parent = Disposer.newDisposable()
+        try {
+            onEdt {
+                val stage = emptyStage(fixture.project, snippet, 1280, 720, 14, parent)
+                val prepared = SnippetRunner.prepare(fixture.project, stage.editor, snippet) { m, t -> messages += m to t }
+                assertSame(stage.editor, prepared!!.editor)
+                assertNull(SnippetRunner.prepare(fixture.project, null, snippet) { m, t -> messages += m to t })
+            }
+        } finally {
+            onEdt { Disposer.dispose(parent) }
+        }
+        assertTrue(messages.any { it.second == NotificationType.ERROR && "no editor" in it.first }, messages.toString())
+    }
+
     @Test
     fun testABlockingPreFlightErrorPreventsTheRun() {
         configureTarget("<caret>")

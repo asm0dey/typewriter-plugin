@@ -1,5 +1,6 @@
 package com.github.asm0dey.typewriter.record
 
+import com.github.asm0dey.typewriter.model.Snippet
 import com.intellij.ide.ui.UISettingsUtils
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -27,30 +28,53 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 
+/** What a stage starts from: its file and caret, plus the display settings to copy when there is a source editor. */
+internal class StageStart(val file: LightVirtualFile, val caret: Int, val from: Editor?)
+
+/** A stage over an empty file named after [snippet] ([cleanClassName]), for a batch video. */
+fun emptyStage(project: Project, snippet: Snippet, width: Int, height: Int, fontSize: Int, parent: Disposable) =
+    RecordingStage(
+        project, StageStart(LightVirtualFile(cleanClassName(snippet.file.name), snippet.fileType, ""), 0, null),
+        width, height, fontSize, parent,
+    )
+
 /**
- * An editor tab that lives in no window: a copy of [source]'s text in a fresh editor, wrapped in
- * JBTabs so the frame looks like the IDE, painted into images by the recorder. EDT only.
+ * An editor tab that lives in no window: a copy of a source editor's text (or an empty file) in a
+ * fresh editor, wrapped in JBTabs so the frame looks like the IDE, painted into images by the
+ * recorder. EDT only.
  */
-class RecordingStage(project: Project, source: Editor, width: Int, height: Int, fontSize: Int, parent: Disposable) {
+class RecordingStage internal constructor(
+    project: Project, start: StageStart, width: Int, height: Int, fontSize: Int, parent: Disposable,
+) {
+    constructor(project: Project, source: Editor, width: Int, height: Int, fontSize: Int, parent: Disposable) :
+        this(project, copyOf(source), width, height, fontSize, parent)
+
     companion object {
         /** Set on a stage's editor, so a live run's [com.github.asm0dey.typewriter.run.AbortWatcher] can ignore it. */
         val STAGE: Key<Boolean> = Key.create("typewriter.recordingStage")
+
+        private fun copyOf(source: Editor): StageStart {
+            val sourceFile = FileDocumentManager.getInstance().getFile(source.document)
+            val name = sourceFile?.name ?: "untitled"
+            val fileType = sourceFile?.fileType ?: PlainTextFileType.INSTANCE
+            // A live run replaces the selection before typing (RunService.replaceSelection), so the copy starts that way.
+            val selection = source.selectionModel
+            val text = source.document.text
+            val (initialText, caret) =
+                if (selection.hasSelection()) text.removeRange(selection.selectionStart, selection.selectionEnd) to selection.selectionStart
+                else text to source.caretModel.offset
+            return StageStart(LightVirtualFile(name, fileType, initialText), caret, source)
+        }
     }
 
     val editor: EditorEx
     val component: JComponent
 
     init {
-        val sourceFile = FileDocumentManager.getInstance().getFile(source.document)
-        val name = sourceFile?.name ?: "untitled"
-        val fileType = sourceFile?.fileType ?: PlainTextFileType.INSTANCE
-        // A live run replaces the selection before typing (RunService.replaceSelection), so the copy starts that way.
-        val selection = source.selectionModel
-        val text = source.document.text
-        val (initialText, caret) =
-            if (selection.hasSelection()) text.removeRange(selection.selectionStart, selection.selectionEnd) to selection.selectionStart
-            else text to source.caretModel.offset
-        val file = LightVirtualFile(name, fileType, initialText)
+        val file = start.file
+        val name = file.name
+        val fileType = file.fileType
+        val caret = start.caret
         val document = FileDocumentManager.getInstance().getDocument(file)!!
         UndoUtil.disableUndoFor(document)
         editor = EditorFactory.getInstance().createEditor(document, project, file, false) as EditorEx
@@ -58,8 +82,10 @@ class RecordingStage(project: Project, source: Editor, width: Int, height: Int, 
         Disposer.register(parent) { EditorFactory.getInstance().releaseEditor(editor) }
 
         editor.settings.isLineNumbersShown = true
-        editor.settings.isUseSoftWraps = source.settings.isUseSoftWraps
-        editor.settings.isWhitespacesShown = source.settings.isWhitespacesShown
+        start.from?.let {
+            editor.settings.isUseSoftWraps = it.settings.isUseSoftWraps
+            editor.settings.isWhitespacesShown = it.settings.isWhitespacesShown
+        }
         editor.scrollingModel.disableAnimation()
         // EditorEx.setFontSize writes the editor's own scheme delegate, never the global scheme.
         editor.setFontSize(fontSize * UISettingsUtils.getInstance().currentIdeScale)

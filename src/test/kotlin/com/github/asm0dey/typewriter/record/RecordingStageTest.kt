@@ -1,6 +1,9 @@
 package com.github.asm0dey.typewriter.record
 
 import com.github.asm0dey.typewriter.TypeWriterFixtureTestCase
+import com.github.asm0dey.typewriter.model.Snippet
+import com.intellij.ide.highlighter.JavaFileType
+import com.intellij.testFramework.LightVirtualFile
 import com.intellij.ide.DataManager
 import com.intellij.ide.ui.UISettingsUtils
 import com.intellij.openapi.actionSystem.CommonDataKeys
@@ -39,6 +42,23 @@ class RecordingStageTest : TypeWriterFixtureTestCase() {
     private fun longFile(caretLine: Int) {
         val text = (0 until 200).joinToString("\n") { if (it == caretLine) "<caret>// line $it" else "// line $it" }
         fixture.configureByText("Long.java", text)
+    }
+
+    @Test
+    fun testEmptyStageTypesIntoFreshFileNamedLikeAClass() {
+        val file = LightVirtualFile("03-user-service.java", JavaFileType.INSTANCE, "class X {}")
+        val snippet = Snippet("id", "talk/03-user-service.java", file, JavaFileType.INSTANCE, true)
+        val parent = Disposer.newDisposable()
+        try {
+            val stage = emptyStage(fixture.project, snippet, 1280, 720, 14, parent)
+            assertEquals("", stage.editor.document.text)
+            assertEquals(0, stage.editor.caretModel.offset)
+            val staged = FileDocumentManager.getInstance().getFile(stage.editor.document)!!
+            assertEquals("UserService.java", staged.name)
+            assertEquals(JavaFileType.INSTANCE, staged.fileType)
+        } finally {
+            Disposer.dispose(parent)
+        }
     }
 
     @Test

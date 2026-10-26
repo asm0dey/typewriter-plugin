@@ -125,12 +125,18 @@ object SnippetRunner {
         }
     }
 
-    /** Everything [run] does before launching, notifications included; null wherever it bails out. */
-    fun prepare(project: Project, editor: Editor?, snippet: Snippet): Prepared? {
+    /**
+     * Everything [run] does before launching; null wherever it bails out. Messages go to [report],
+     * which notifies by default -- a batch recording collects them instead.
+     */
+    fun prepare(
+        project: Project, editor: Editor?, snippet: Snippet,
+        report: (String, NotificationType) -> Unit = { m, t -> notify(project, m, t) },
+    ): Prepared? {
         val settings = ApplicationManager.getApplication().getService(TypeWriterSettings::class.java)
         val text = SnippetLibrary.textOf(snippet)
         if (text == null) {
-            notify(project, "${snippet.relativePath} has no readable text", NotificationType.ERROR)
+            report("${snippet.relativePath} has no readable text", NotificationType.ERROR)
             return null
         }
 
@@ -174,11 +180,11 @@ object SnippetRunner {
 
         val checks = PreFlight.check(editor, snippet, program, formatWarning)
         checks.filterIsInstance<Check.Warning>().forEach {
-            notify(project, it.message, NotificationType.WARNING)
+            report(it.message, NotificationType.WARNING)
         }
         if (checks.blocked()) {
             checks.filterIsInstance<Check.Error>().forEach {
-                notify(project, it.message, NotificationType.ERROR)
+                report(it.message, NotificationType.ERROR)
             }
             return null
         }
