@@ -8,12 +8,14 @@ import kotlin.time.Duration
  * on a frame time is painted by the sleep that follows it. Integer nanoseconds: no drift.
  */
 class FrameClock(private val fps: Int) {
-    private var t = 0L
+    /** The current virtual time, in nanoseconds. */
+    var nanos = 0L
+        private set
 
     fun advance(d: Duration): Int {
-        val first = ceilDiv(t * fps)
-        t += d.inWholeNanoseconds
-        return (ceilDiv(t * fps) - first).toInt()
+        val first = ceilDiv(nanos * fps)
+        nanos += d.inWholeNanoseconds
+        return (ceilDiv(nanos * fps) - first).toInt()
     }
 
     private fun ceilDiv(n: Long) = Math.ceilDiv(n, 1_000_000_000L)

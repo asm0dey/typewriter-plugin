@@ -3,6 +3,7 @@ package com.github.asm0dey.typewriter.record
 import com.github.asm0dey.typewriter.library.SnippetRunner
 import com.github.asm0dey.typewriter.model.Snippet
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -37,21 +38,27 @@ suspend fun recordBatch(
 ) {
     items.forEachIndexed { index, item ->
         onStart(index, item)
-        val itemOptions = options.copy(output = item.output)
         val warnings = mutableListOf<String>()
         val errors = mutableListOf<String>()
         // Anything thrown outside runRecording (a binary file with no document, say) fails this item only.
         val failure = try { withContext(Dispatchers.EDT) {
             val disposable = Disposer.newDisposable("TypeWriter batch recording")
             try {
-                val stage = emptyStage(project, item.snippet, options.width, options.height, options.fontSize, disposable)
-                val prepared = SnippetRunner.prepare(project, stage.editor, item.snippet) { message, type ->
+                fun newStage(width: Int, height: Int, parent: Disposable) =
+                    emptyStage(project, item.snippet, width, height, options.fontSize, parent)
+                // Prepared against a stage of its own: every fresh empty stage resolves the same steps.
+                val preparing = Disposer.newDisposable(disposable, "TypeWriter batch preparing")
+                val preparingStage = newStage(options.width, options.height, preparing)
+                val prepared = SnippetRunner.prepare(project, preparingStage.editor, item.snippet) { message, type ->
                     if (type == NotificationType.ERROR) errors += message else warnings += message
                 }
                     ?: return@withContext errors.joinToString("\n").ifEmpty { "could not prepare the snippet" }
+                Disposer.dispose(preparing)
                 warnings += recordingWarnings(item.snippet.relativePath, prepared.steps).map { it.message }
+                val itemOptions = fitted(project, options.copy(output = item.output), prepared.steps, prepared.timing, ::newStage)
+                val stage = newStage(itemOptions.width, itemOptions.height, disposable)
                 val sink = sinkFor(itemOptions)
-                runRecording(sink) {
+                runRecording({ sink }) {
                     // FfmpegSink writes its .part file next to the output, so the folder must exist first.
                     withContext(Dispatchers.IO) { Files.createDirectories(item.output.parent) }
                     record(project, stage, prepared.steps, prepared.timing, itemOptions, sink) {

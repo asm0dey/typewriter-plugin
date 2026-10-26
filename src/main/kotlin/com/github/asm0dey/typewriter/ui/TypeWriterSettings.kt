@@ -23,6 +23,8 @@ class TypeWriterSettings : PersistentStateComponent<TypeWriterSettings.State> {
         var recordDir: String = "",
         var recordWidth: Int = 1920,
         var recordHeight: Int = 1080,
+        /** Size each video to its code instead of [recordWidth] x [recordHeight]. */
+        var recordFit: Boolean = false,
         /** 0 = use the target editor's font size. */
         var recordFontSize: Int = 0,
         var recordFps: Int = 60,

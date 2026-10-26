@@ -35,10 +35,10 @@ internal fun defaultFontSize(saved: Int): Int =
     saved.takeIf { it > 0 } ?: EditorColorsManager.getInstance().globalScheme.editorFontSize
 
 /**
- * Runs [block], aborting [sink] unless it completes -- even on an [Error]. Returns the failure to
- * notify, or null on success; a cancellation is rethrown without one.
+ * Runs [block], aborting the [sink] it has by then unless it completes -- even on an [Error]. Returns
+ * the failure to notify, or null on success; a cancellation is rethrown without one.
  */
-internal suspend fun runRecording(sink: FrameSink, block: suspend () -> Unit): String? {
+internal suspend fun runRecording(sink: () -> FrameSink?, block: suspend () -> Unit): String? {
     var done = false
     try {
         block()
@@ -51,7 +51,7 @@ internal suspend fun runRecording(sink: FrameSink, block: suspend () -> Unit): S
     } catch (e: Exception) {
         return "recording failed: ${e.message ?: e}"
     } finally {
-        if (!done) sink.abort()
+        if (!done) sink()?.abort()
     }
 }
 
@@ -87,15 +87,20 @@ class RecordingService(private val project: Project, private val scope: Coroutin
                     // handle into this class and the plugin verifier rejects it. Whole percents, and
                     // only ever forward: nextStep needs a strictly increasing end fraction.
                     var percent = 0
-                    val sink = FfmpegSink(status.path, options)
-                    val failure = runRecording(sink) {
+                    // Created once the frame size is known: Fit to code measures it first.
+                    var sink: FfmpegSink? = null
+                    val failure = runRecording({ sink }) {
                         withContext(Dispatchers.EDT) {
+                            val sized = fitted(project, options, prepared.steps, prepared.timing) { w, h, parent ->
+                                RecordingStage(project, prepared.editor, w, h, options.fontSize, parent)
+                            }
+                            val ffmpeg = FfmpegSink(status.path, sized).also { sink = it }
                             val disposable = Disposer.newDisposable("TypeWriter recording")
                             try {
                                 val stage = RecordingStage(
-                                    project, prepared.editor, options.width, options.height, options.fontSize, disposable,
+                                    project, prepared.editor, sized.width, sized.height, options.fontSize, disposable,
                                 )
-                                record(project, stage, prepared.steps, prepared.timing, options, sink) {
+                                record(project, stage, prepared.steps, prepared.timing, sized, ffmpeg) {
                                     val next = (it * 100).toInt()
                                     if (next > percent) {
                                         percent = next
@@ -212,6 +217,7 @@ class RecordingService(private val project: Project, private val scope: Coroutin
         fps = settings.recordFps,
         holdBeforeMs = settings.recordHoldBeforeMs,
         holdAfterMs = settings.recordHoldAfterMs,
+        fit = settings.recordFit,
     )
 
     private fun save(settings: TypeWriterSettings.State, options: RecordOptions) {
@@ -221,5 +227,6 @@ class RecordingService(private val project: Project, private val scope: Coroutin
         settings.recordFps = options.fps
         settings.recordHoldBeforeMs = options.holdBeforeMs
         settings.recordHoldAfterMs = options.holdAfterMs
+        settings.recordFit = options.fit
     }
 }

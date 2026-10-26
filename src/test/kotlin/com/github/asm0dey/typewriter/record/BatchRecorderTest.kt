@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileTypes.UnknownFileType
 import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.coroutines.CancellationException
@@ -86,6 +87,43 @@ class BatchRecorderTest : TypeWriterFixtureTestCase() {
         outcomes.forEach { assertInstanceOf(BatchOutcome.Recorded::class.java, it) }
         assertEquals(listOf("class A {}", "class B {}"), sinks.map { it.finalText?.trim() })
         assertTrue(Files.isDirectory(out.resolve("java")))
+    }
+
+    @Test
+    fun `10-snippet and 11-snippet both type into Snippet_java and get their own videos`() {
+        val names = listOf("10-snippet.java", "11-snippet.java")
+        val targets = batchTargets(names, out, VideoFormat.MP4)
+        assertEquals(listOf(out.resolve("10-snippet.mp4"), out.resolve("11-snippet.mp4")), names.map { targets.getValue(it) })
+        val items = listOf(
+            BatchItem(snippet(names[0], "class Ten {}"), targets.getValue(names[0])),
+            BatchItem(snippet(names[1], "class Eleven {}"), targets.getValue(names[1])),
+        )
+        val stageNames = mutableListOf<String>()
+        val sinks = mutableListOf<ListSink>()
+        val outcomes = run(items) {
+            stageNames += EditorFactory.getInstance().allEditors
+                .single { e -> e.getUserData(RecordingStage.STAGE) == true }
+                .let { e -> FileDocumentManager.getInstance().getFile(e.document)!!.name }
+            ListSink().also { sinks += it }
+        }
+        outcomes.forEach { assertInstanceOf(BatchOutcome.Recorded::class.java, it, (it as? BatchOutcome.Failed)?.reason) }
+        assertEquals(listOf("Snippet.java", "Snippet.java"), stageNames)
+        assertEquals(listOf("class Ten {}", "class Eleven {}"), sinks.map { it.finalText?.trim() })
+        assertEquals(items.map { it.output }, outcomes.map { it.item.output })
+    }
+
+    @Test
+    fun `fit to code sizes every video to its own snippet`() {
+        val items = listOf(
+            BatchItem(snippet("01-a.java", "class A {}"), out.resolve("01-a.mp4")),
+            BatchItem(snippet("02-b.java", "class B {\n" + "    int aVeryLongFieldNameIndeed;\n".repeat(20) + "}"), out.resolve("02-b.mp4")),
+        )
+        val sized = mutableListOf<RecordOptions>()
+        val outcomes = run(items, options().copy(fit = true)) { sized += it; ListSink() }
+        outcomes.forEach { assertInstanceOf(BatchOutcome.Recorded::class.java, it) }
+        val (a, b) = sized
+        assertTrue(b.width > a.width && b.height > a.height, "$a vs $b")
+        sized.forEach { assertTrue(it.width % 2 == 0 && it.height % 2 == 0, "$it") }
     }
 
     @Test

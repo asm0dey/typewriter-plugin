@@ -1,5 +1,13 @@
 # TypeWriter Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Fit to code** size for recordings: each video is just big enough for the tab, the line numbers and every line the snippet ever shows, with no scrolling. In a batch every video gets its own size.
+- 3840×2160 (4K) recording size preset.
+- The recorded caret blinks at the IDE's caret blink rate during pauses and holds, and stays solid while typing.
+
 ## [1.2.0]
 
 ### Added
