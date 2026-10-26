@@ -6,6 +6,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
@@ -39,7 +40,8 @@ suspend fun recordBatch(
         val itemOptions = options.copy(output = item.output)
         val warnings = mutableListOf<String>()
         val errors = mutableListOf<String>()
-        val failure = withContext(Dispatchers.EDT) {
+        // Anything thrown outside runRecording (a binary file with no document, say) fails this item only.
+        val failure = try { withContext(Dispatchers.EDT) {
             val disposable = Disposer.newDisposable("TypeWriter batch recording")
             try {
                 val stage = emptyStage(project, item.snippet, options.width, options.height, options.fontSize, disposable)
@@ -59,6 +61,10 @@ suspend fun recordBatch(
             } finally {
                 Disposer.dispose(disposable)
             }
+        } } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            "recording failed: ${e.message ?: e}"
         }
         progress((index + 1.0) / items.size)
         onOutcome(failure?.let { BatchOutcome.Failed(item, it, warnings) } ?: BatchOutcome.Recorded(item, warnings))

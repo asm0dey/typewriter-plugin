@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.editor.EditorFactory
+import com.intellij.openapi.fileTypes.UnknownFileType
 import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +101,18 @@ class BatchRecorderTest : TypeWriterFixtureTestCase() {
         val outcomes = run(items) { ListSink() }
         val failed = assertInstanceOf(BatchOutcome.Failed::class.java, outcomes[0])
         assertTrue("no readable text" in failed.reason, failed.reason)
+        assertInstanceOf(BatchOutcome.Recorded::class.java, outcomes[1])
+    }
+
+    @Test
+    fun `a binary file among the snippets fails alone`() {
+        val binary = snippet(".DS_Store", "\u0000\u0001").copy(fileType = UnknownFileType.INSTANCE)
+        val items = listOf(
+            BatchItem(binary, out.resolve(".DS_Store.mp4")),
+            BatchItem(snippet("02-b.java", "class B {}"), out.resolve("02-b.mp4")),
+        )
+        val outcomes = run(items) { ListSink() }
+        assertInstanceOf(BatchOutcome.Failed::class.java, outcomes[0])
         assertInstanceOf(BatchOutcome.Recorded::class.java, outcomes[1])
     }
 
